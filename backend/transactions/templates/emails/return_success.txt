@@ -1,0 +1,4 @@
+Dear {{ member_name }},
+
+You successfully returned "{{ material_title }}".
+Fine amount: {{ fine_amount }}

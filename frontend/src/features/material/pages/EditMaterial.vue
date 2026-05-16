@@ -115,12 +115,16 @@ watch(
 );
 
 function update({ values }) {
-  const payload = {
-    ...values,
-    published_date: toDateInputValue(values.published_date),
-    total_copies: Number(values.total_copies),
-    price: Number(values.price)
-  };
+  const payload = new FormData();
+  Object.entries(values || {}).forEach(([key, value]) => payload.append(key, value ?? ''));
+  payload.set('published_date', toDateInputValue(values.published_date));
+  payload.set('total_copies', Number(values.total_copies || 0));
+  payload.set('price', Number(values.price || 0));
+  const imageInput = document.querySelector('input[name="image"]');
+  const imageFile = imageInput?.files?.[0] || null;
+  if (imageFile) {
+    payload.set('image', imageFile, imageFile.name);
+  }
 
   updateReq.send(
     () => updateMaterialById(materialUuid, payload, materialType.value),
@@ -129,7 +133,7 @@ function update({ values }) {
 
       if (res.success) {
         // Update store with new data
-        const updatedRow = res.data || { ...material.value, ...payload };
+        const updatedRow = res.data || { ...material.value, ...values };
         materialStore.update(materialUuid, updatedRow);
         emitEntityMutation('materials', { action: 'updated', id: materialUuid, type: materialType.value });
         router.push({ name: 'Material' }); // Redirect back to material list

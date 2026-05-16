@@ -65,6 +65,7 @@ function toDateInputValue(value) {
 
     <Input name="total_copies" type="number" label="Total Copies" validation="required|numeric" :value="initialData?.total_copies ?? ''" />
     <Input name="price" type="number" label="Price" :value="initialData?.price ?? ''" :attributes="{ step: '0.01' }" />
+    <Input name="image" type="file" label="Material Image (Optional)" :attributes="{ accept: '.jpg,.jpeg,.png,.webp,.gif' }" />
 
     <Select
       name="condition"

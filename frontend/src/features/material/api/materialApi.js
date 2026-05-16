@@ -67,6 +67,13 @@ export function getMaterialFeedback(query = {}) {
   return api.addAuthenticationHeader().get(`/material/feedback/${qr}`);
 }
 
+export function getMaterialFeedbackByMaterial(materialType, materialId, query = {}) {
+  const qr = getQueryFormObject(query || {});
+  return api.addAuthenticationHeader().get(
+    `/material/feedback/by-material/${materialType}/${materialId}/${qr}`
+  );
+}
+
 export function createMaterialFeedback(payload = {}) {
   return api.addAuthenticationHeader().post("/material/feedback/", payload);
 }

@@ -100,6 +100,8 @@ function handleCreate({ values }) {
   if (isDigital.value) {
     const fileInput = document.querySelector('input[name="file"]');
     const uploadFile = fileInput?.files?.[0] || null;
+    const coverImageInput = document.querySelector('input[name="cover_image"]');
+    const coverImageFile = coverImageInput?.files?.[0] || null;
     
     if (!uploadFile) {
       toasted(false, 'Please choose a digital file before submitting.');
@@ -119,6 +121,9 @@ function handleCreate({ values }) {
       payload.append('library', values.library);
     }
     payload.append('file', uploadFile, uploadFile.name);
+    if (coverImageFile) {
+      payload.append('cover_image', coverImageFile, coverImageFile.name);
+    }
     
     req.send(
       () => CreateMaterial(payload, currentType.value),
@@ -136,14 +141,19 @@ function handleCreate({ values }) {
       }
     );
   } else {
-    const payload = {
-      ...values,
-      published_date: toDateInputValue(values.published_date),
-      price: Number(values.price || 0),
-      can_borrow: String(values.can_borrow || '').toUpperCase() === 'YES',
-      total_copies: Number(values.total_copies || 0),
-      library: values.library || null,
-    };
+    const imageInput = document.querySelector('input[name="image"]');
+    const imageFile = imageInput?.files?.[0] || null;
+    const payload = new FormData();
+    Object.entries(values || {}).forEach(([key, value]) => {
+      payload.append(key, value ?? '');
+    });
+    payload.set('published_date', toDateInputValue(values.published_date));
+    payload.set('price', Number(values.price || 0));
+    payload.set('can_borrow', String(values.can_borrow || '').toUpperCase() === 'YES');
+    payload.set('total_copies', Number(values.total_copies || 0));
+    if (imageFile) {
+      payload.append('image', imageFile, imageFile.name);
+    }
     
     req.send(
       () => CreateMaterial(payload, currentType.value),
@@ -275,10 +285,22 @@ function validateAndNext() {
                 }"
                 label="Digital File"
               />
+              <Input
+                name="cover_image"
+                type="file"
+                :attributes="{ accept: '.jpg,.jpeg,.png,.webp,.gif' }"
+                label="Custom Cover Image (Optional)"
+              />
               <p class="file-hint">Accepted formats: PDF, DOC, DOCX, EPUB, TXT, PPT, PPTX</p>
             </div>
             
             <div v-else class="form-grid">
+              <Input
+                name="image"
+                type="file"
+                :attributes="{ accept: '.jpg,.jpeg,.png,.webp,.gif' }"
+                label="Material Image (Optional)"
+              />
               <Select name="location" label="Library Location" validation="required"
                 :options="['STACK', 'SHELF','OTHER']"
                 :attributes="{ placeholder: 'Select Location' }" />

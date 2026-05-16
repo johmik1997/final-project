@@ -5,6 +5,7 @@ from django.conf import settings
 from django.db import transaction
 from .models import Borrow, Reservation, Return
 from .services import calculate_overdue_days, finalize_return_for_borrow
+from .services import notify_borrow_success, notify_return_success
 from user_mgt.access import get_active_library_policy, get_user_library, is_super_admin, normalize_role
 from user_mgt.models import User
 
@@ -267,7 +268,9 @@ class BorrowSerializer(serializers.ModelSerializer):
                 reservation.status = "EXPIRED"
                 reservation.save(update_fields=["status"])
 
-            return super().create(validated_data)
+            borrow = super().create(validated_data)
+            transaction.on_commit(lambda: notify_borrow_success(borrow))
+            return borrow
 
 
 class ReturnSerializer(serializers.ModelSerializer):
@@ -370,4 +373,5 @@ class ReturnSerializer(serializers.ModelSerializer):
         if return_record.fine_amount <= 0:
             finalize_return_for_borrow(borrow)
 
+        transaction.on_commit(lambda: notify_return_success(borrow, return_record))
         return return_record

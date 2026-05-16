@@ -1,0 +1,6 @@
+Dear {{ member_name }},
+
+Your borrowed material "{{ material_title }}" is overdue since {{ due_date }}.
+Current overdue duration: {{ overdue_days }} day(s).
+
+Please return it as soon as possible.

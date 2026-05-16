@@ -1,5 +1,8 @@
 from material_mgt.models import *
 from rest_framework import serializers
+from django.utils.translation import gettext_lazy as _
+from material_mgt.services import is_allowed_image_file
+from django.db.models import Avg, Count
 
 
 def _build_media_url(request, file_field):
@@ -10,7 +13,102 @@ def _build_media_url(request, file_field):
         return None
     return request.build_absolute_uri(url) if request else url
 
-class PhysicalMaterialSerializer(serializers.ModelSerializer):
+
+class MaterialFeedbackPreviewSerializer(serializers.ModelSerializer):
+    user_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MaterialFeedback
+        fields = ["id", "user_name", "rating", "comment", "created_at", "updated_at"]
+
+    def get_user_name(self, obj):
+        user = getattr(obj, "user", None)
+        if not user:
+            return None
+        return f"{user.first_name} {user.last_name}".strip() or user.id_number
+
+
+class MaterialFeedbackStatsMixin:
+    average_rating = serializers.SerializerMethodField(read_only=True)
+    ratings_count = serializers.SerializerMethodField(read_only=True)
+    comments_count = serializers.SerializerMethodField(read_only=True)
+    recent_feedbacks = serializers.SerializerMethodField(read_only=True)
+    my_feedback_id = serializers.SerializerMethodField(read_only=True)
+    my_rating = serializers.SerializerMethodField(read_only=True)
+    my_comment = serializers.SerializerMethodField(read_only=True)
+
+    def _get_feedback_queryset(self, obj):
+        return getattr(obj, "feedbacks", None)
+
+    def get_average_rating(self, obj):
+        annotated = getattr(obj, "average_rating", None)
+        if annotated is not None:
+            return round(float(annotated or 0), 2)
+        feedbacks = self._get_feedback_queryset(obj)
+        if feedbacks is None:
+            return 0
+        result = feedbacks.aggregate(avg=Avg("rating"))
+        return round(float(result.get("avg") or 0), 2)
+
+    def get_ratings_count(self, obj):
+        annotated = getattr(obj, "ratings_count", None)
+        if annotated is not None:
+            return int(annotated or 0)
+        feedbacks = self._get_feedback_queryset(obj)
+        if feedbacks is None:
+            return 0
+        return feedbacks.count()
+
+    def get_comments_count(self, obj):
+        annotated = getattr(obj, "comments_count", None)
+        if annotated is not None:
+            return int(annotated or 0)
+        feedbacks = self._get_feedback_queryset(obj)
+        if feedbacks is None:
+            return 0
+        return feedbacks.exclude(comment="").count()
+
+    def get_recent_feedbacks(self, obj):
+        feedbacks = self._get_feedback_queryset(obj)
+        if feedbacks is None:
+            return []
+        rows = feedbacks.select_related("user").order_by("-updated_at")[:10]
+        return MaterialFeedbackPreviewSerializer(rows, many=True, context=self.context).data
+
+    def get_my_rating(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return None
+        feedbacks = self._get_feedback_queryset(obj)
+        if feedbacks is None:
+            return None
+        row = feedbacks.filter(user=user).first()
+        return row.rating if row else None
+
+    def get_my_comment(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return ""
+        feedbacks = self._get_feedback_queryset(obj)
+        if feedbacks is None:
+            return ""
+        row = feedbacks.filter(user=user).first()
+        return row.comment if row else ""
+
+    def get_my_feedback_id(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return None
+        feedbacks = self._get_feedback_queryset(obj)
+        if feedbacks is None:
+            return None
+        row = feedbacks.filter(user=user).first()
+        return str(row.id) if row else None
+
+class PhysicalMaterialSerializer(MaterialFeedbackStatsMixin, serializers.ModelSerializer):
     created_by_name = serializers.CharField(source="created_by.full_name", read_only=True)
     library_name = serializers.CharField(source="library.name", read_only=True)
 
@@ -19,16 +117,30 @@ class PhysicalMaterialSerializer(serializers.ModelSerializer):
         fields = "__all__"
         read_only_fields = ["created_by", "created_by_name", "library_name"]
 
+    def validate_image(self, value):
+        if value and not is_allowed_image_file(value):
+            raise serializers.ValidationError(_("Only JPG, JPEG, PNG, WEBP, or GIF files are allowed."))
+        return value
 
-class DigitalMaterialSerializer(serializers.ModelSerializer):
+
+class DigitalMaterialSerializer(MaterialFeedbackStatsMixin, serializers.ModelSerializer):
     created_by_name = serializers.CharField(source="created_by.full_name", read_only=True)
     library_name = serializers.CharField(source="library.name", read_only=True)
     file = serializers.FileField(required=True)
+    cover_image_url = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = DigitalMaterial
         fields = "__all__"
         read_only_fields = ["created_by", "created_by_name", "library_name", "format","file_size"]
+
+    def get_cover_image_url(self, obj):
+        return _build_media_url(self.context.get("request"), getattr(obj, "cover_image", None))
+
+    def validate_cover_image(self, value):
+        if value and not is_allowed_image_file(value):
+            raise serializers.ValidationError(_("Only JPG, JPEG, PNG, WEBP, or GIF files are allowed."))
+        return value
 
     def validate(self, attrs):
         request = self.context.get("request")

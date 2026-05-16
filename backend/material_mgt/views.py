@@ -1,5 +1,7 @@
 import requests
 from django.db.models import Avg, Count, Q
+from django.utils.translation import gettext as _
+from uuid import UUID
 
 from rest_framework.generics import CreateAPIView
 from rest_framework.generics import DestroyAPIView
@@ -10,10 +12,14 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
+from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 import os
+from django.db.models import Prefetch
 from material_mgt.models import *
 from material_mgt.serializers import *
+from material_mgt.services import generate_pdf_cover_image
+from transactions.models import Borrow, Reservation
 from user_mgt.access import (
     get_user_library,
     has_global_material_access,
@@ -32,15 +38,21 @@ def _parse_bool(value, default=False):
 
 def _resolve_material_or_error(material_type, material_id):
     material_type_norm = str(material_type or "").strip().lower()
+    material_id_str = str(material_id or "").strip()
+
+    try:
+        material_uuid = UUID(material_id_str)
+    except (TypeError, ValueError):
+        raise ValidationError({"material_id": _("Invalid material id.")})
 
     if material_type_norm == "physical":
-        material = PhysicalMaterial.objects.filter(pk=material_id).first()
+        material = PhysicalMaterial.objects.filter(pk=material_uuid).first()
         if not material:
             raise ValidationError({"material_id": "Physical material not found."})
         return material_type_norm, material
 
     if material_type_norm == "digital":
-        material = DigitalMaterial.objects.filter(pk=material_id).first()
+        material = DigitalMaterial.objects.filter(pk=material_uuid).first()
         if not material:
             raise ValidationError({"material_id": "Digital material not found."})
         return material_type_norm, material
@@ -72,7 +84,12 @@ def _get_staff_profile_or_error(user):
     return user
 
 class PhysicalMaterialViewSet(ModelViewSet):
-    queryset = PhysicalMaterial.objects.select_related("library", "created_by").order_by("title", "id")
+    queryset = PhysicalMaterial.objects.select_related("library", "created_by").prefetch_related(
+        Prefetch("feedbacks", queryset=MaterialFeedback.objects.select_related("user").order_by("-updated_at"))
+    ).annotate(
+        average_rating=Avg("feedbacks__rating"),
+        ratings_count=Count("feedbacks"),
+    ).order_by("title", "id")
     serializer_class = PhysicalMaterialSerializer
     # permission_classes = [IsAuthenticated, IsTechnicalStaffForWrite]
 
@@ -125,7 +142,12 @@ class PhysicalMaterialViewSet(ModelViewSet):
 
 
 class DigitalMaterialViewSet(ModelViewSet):
-    queryset = DigitalMaterial.objects.select_related("library", "created_by").order_by("title", "id")
+    queryset = DigitalMaterial.objects.select_related("library", "created_by").prefetch_related(
+        Prefetch("feedbacks", queryset=MaterialFeedback.objects.select_related("user").order_by("-updated_at"))
+    ).annotate(
+        average_rating=Avg("feedbacks__rating"),
+        ratings_count=Count("feedbacks"),
+    ).order_by("title", "id")
     serializer_class = DigitalMaterialSerializer
     # permission_classes = [IsAuthenticated, IsTechnicalStaffForWrite]
 
@@ -143,18 +165,22 @@ class DigitalMaterialViewSet(ModelViewSet):
         actor_library = get_user_library(self.request.user)
         if not actor_library and not is_super_admin(self.request.user):
             raise ValidationError({"library": "Your account is not assigned to a library yet."})
-        serializer.save(
+        instance = serializer.save(
             created_by=_get_staff_profile_or_error(self.request.user),
             library=serializer.validated_data.get("library") if is_super_admin(self.request.user) else actor_library,
         )
+        if not instance.cover_image and generate_pdf_cover_image(instance):
+            instance.save(update_fields=["cover_image", "cover_generated_at"])
 
     def perform_update(self, serializer):
         actor_library = get_user_library(self.request.user)
         if not actor_library and not is_super_admin(self.request.user):
             raise ValidationError({"library": "Your account is not assigned to a library yet."})
-        serializer.save(
+        instance = serializer.save(
             library=serializer.validated_data.get("library") if is_super_admin(self.request.user) else actor_library
         )
+        if not instance.cover_image and generate_pdf_cover_image(instance):
+            instance.save(update_fields=["cover_image", "cover_generated_at"])
 
 
 class MaterialFeedbackViewSet(ModelViewSet):
@@ -193,6 +219,24 @@ class MaterialFeedbackViewSet(ModelViewSet):
         if target_material and not _user_can_access_material(self.request.user, target_material):
             raise ValidationError({"detail": "You can only comment on materials from your library."})
         serializer.save(user=self.request.user)
+
+    @action(detail=False, methods=["get"], url_path=r"by-material/(?P<material_type>[^/.]+)/(?P<material_id>[^/.]+)")
+    def by_material(self, request, material_type=None, material_id=None):
+        if not material_type or not material_id:
+            raise ValidationError({"detail": "material_type and material_id are required."})
+
+        material_type_norm, material = _resolve_material_or_error(material_type, material_id)
+        if material_type_norm == "physical":
+            queryset = self.queryset.filter(physical_material=material)
+        else:
+            queryset = self.queryset.filter(digital_material=material)
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class MaterialFavoriteViewSet(ModelViewSet):
@@ -458,27 +502,53 @@ def _build_chat_prompt(prompt, history=None):
     return "\n".join(lines)
 
 
+def _build_library_context(user):
+    if not user or not user.is_authenticated:
+        return {}
+
+    borrows = Borrow.objects.select_related("material").filter(member=user).exclude(status="RETURNED").order_by("due_date")[:5]
+    reservations = Reservation.objects.select_related("material_id").filter(member=user, status="RESERVED").order_by("reserve_date")[:5]
+    available_books = PhysicalMaterial.objects.filter(available_copies__gt=0).order_by("title")[:10]
+
+    return {
+        "borrowed_materials": [
+            {"title": row.material.title, "due_date": row.due_date.date().isoformat(), "status": row.status}
+            for row in borrows
+        ],
+        "reservations": [
+            {"title": row.material_id.title, "expiry_date": row.expiry_date.date().isoformat(), "status": row.status}
+            for row in reservations
+        ],
+        "available_books": [row.title for row in available_books],
+    }
+
+
 class LibraryAssistantChatAPIView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
         prompt = str(request.data.get("prompt", "")).strip()
         history = request.data.get("history", [])
+        language = str(request.data.get("language", "en")).strip().lower()
 
         if not prompt:
-            raise ValidationError({"prompt": "Prompt is required."})
+            raise ValidationError({"prompt": _("Prompt is required.")})
 
         model = _get_openai_model("OPENAI_CHAT_MODEL")
+        context_prefix = (
+            f"Preferred response language: {'Amharic' if language.startswith('am') else 'English'}.\n"
+            f"Library data context: {_build_library_context(request.user)}\n"
+        )
         result = _request_openai_text(
             model=model,
-            prompt=_build_chat_prompt(prompt, history),
+            prompt=context_prefix + _build_chat_prompt(prompt, history),
             max_output_tokens=400,
         )
 
         if not result["success"]:
             return Response({"detail": result["error"]}, status=result["status"])
 
-        message = result["text"] or "I am sorry, I could not generate an answer right now."
+        message = result["text"] or _("I am sorry, I could not generate an answer right now.")
         return Response({"message": message, "model": model}, status=status.HTTP_200_OK)
 
 

@@ -258,7 +258,7 @@
                 <p class="comment-text">{{ row?.comment || 'This reader left a rating without a written note.' }}</p>
               </div>
 
-              <div v-if="!feedbackRows.length && !allFeedbackReq.pending.value" class="empty-comments">
+              <div v-if="!feedbackRows.length && !detailReq.pending.value" class="empty-comments">
                 <BaseIcon :path="mdiCommentTextOutline" size="32" />
                 <p>No comments yet</p>
                 <span>Be the first to share your thoughts</span>
@@ -283,8 +283,8 @@ import {
   generateMaterialDescription,
   getMaterialBookmarks,
   getMaterialById,
+  getMaterialFeedbackByMaterial,
   getMaterialFavorites,
-  getMaterialFeedback,
   getMaterialInteractionStats,
   removeMaterialBookmark,
   removeMaterialFavorite,
@@ -322,10 +322,9 @@ const router = useRouter();
 const detailReq = useApiRequest();
 const aiReq = useApiRequest();
 const statsReq = useApiRequest();
-const myFeedbackReq = useApiRequest();
-const allFeedbackReq = useApiRequest();
 const favoriteReq = useApiRequest();
 const bookmarkReq = useApiRequest();
+const feedbackReq = useApiRequest();
 const reviewReq = useApiRequest();
 
 const imageSrc = ref(defaultCover);
@@ -334,6 +333,7 @@ const favoriteRecordId = ref(null);
 const bookmarkRecordId = ref(null);
 const feedbackRecordId = ref(null);
 const hasGeneratedSummary = ref(false);
+const resolvedMaterialId = ref('');
 const reviewForm = reactive({
   rating: 5,
   comment: '',
@@ -346,23 +346,43 @@ const activeType = computed(() =>
 const isPhysicalMaterial = computed(() => activeType.value === 'physical');
 
 function extractRow(payload) {
-  if (!payload) return null;
-  if (Array.isArray(payload)) return payload[0] || null;
-  if (Array.isArray(payload?.content)) return payload.content[0] || null;
-  if (Array.isArray(payload?.data)) return payload.data[0] || null;
-  if (Array.isArray(payload?.result)) return payload.result[0] || null;
-  if (Array.isArray(payload?.results)) return payload.results[0] || null;
-  return payload;
+  const normalized = normalizePayload(payload);
+  if (!normalized) return null;
+  if (Array.isArray(normalized)) return normalized[0] || null;
+  return normalized;
 }
 
 function rowsFromPayload(payload) {
-  if (!payload) return [];
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.content)) return payload.content;
-  if (Array.isArray(payload?.result)) return payload.result;
-  if (Array.isArray(payload?.results)) return payload.results;
-  if (Array.isArray(payload?.data)) return payload.data;
+  const normalized = normalizePayload(payload);
+  if (!normalized) return [];
+  if (Array.isArray(normalized)) return normalized;
+  if (Array.isArray(normalized?.content)) return normalized.content;
+  if (Array.isArray(normalized?.result)) return normalized.result;
+  if (Array.isArray(normalized?.results)) return normalized.results;
+  if (Array.isArray(normalized?.data)) return normalized.data;
   return [];
+}
+
+function normalizePayload(payload) {
+  if (!payload) return null;
+  if (Array.isArray(payload)) return payload;
+
+  // Handle common wrappers from ApiService, DRF pagination, and custom backend envelopes.
+  const candidates = [
+    payload?.response,
+    payload?.data,
+    payload?.data?.response,
+    payload?.payload,
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate;
+    if (candidate?.result || candidate?.results || candidate?.content || Array.isArray(candidate?.data)) {
+      return candidate;
+    }
+  }
+
+  return payload;
 }
 
 function normalizeNumber(value, fallback = 0) {
@@ -385,7 +405,11 @@ const material = computed(() => {
 });
 
 const interactionStats = computed(() => statsReq.response.value || {});
-const feedbackRows = computed(() => rowsFromPayload(allFeedbackReq.response.value));
+const feedbackRows = computed(() =>
+  rowsFromPayload(
+    feedbackReq.response.value || material.value?.recent_feedbacks || material.value?.feedbacks
+  )
+);
 
 const summaryText = computed(() => {
   const storedDescription = String(material.value?.description || '').trim();
@@ -394,7 +418,7 @@ const summaryText = computed(() => {
 });
 
 const materialId = computed(() => route.params.materialId);
-const materialIdentity = computed(() => material.value?.id || material.value?.uuid || materialId.value);
+const materialIdentity = computed(() => resolvedMaterialId.value || material.value?.id || material.value?.uuid || materialId.value);
 const currentUserRole = computed(() => {
   const stored = JSON.parse(localStorage.getItem('userDetail') || '{}');
   const user = stored?.user || stored || {};
@@ -418,7 +442,7 @@ const isPdfMaterial = computed(() => {
 const statsCards = computed(() => [
   {
     label: 'Average rating',
-    value: Number(interactionStats.value?.average_rating || 0).toFixed(1),
+    value: Number(material.value?.average_rating ?? interactionStats.value?.average_rating ?? 0).toFixed(1),
   },
   {
     label: 'Favorites',
@@ -430,7 +454,7 @@ const statsCards = computed(() => [
   },
   {
     label: 'Comments',
-    value: normalizeNumber(interactionStats.value?.comments_count),
+    value: normalizeNumber(material.value?.comments_count ?? interactionStats.value?.comments_count),
   },
 ]);
 
@@ -438,6 +462,13 @@ watch(
   material,
   (row) => {
     imageSrc.value = row?.cover_image || row?.image || row?.thumbnail || defaultCover;
+    feedbackRecordId.value = row?.my_feedback_id || null;
+    if (row?.my_rating != null) {
+      reviewForm.rating = normalizeNumber(row.my_rating, 5) || 5;
+    }
+    if (row?.my_comment != null) {
+      reviewForm.comment = String(row.my_comment || '');
+    }
   },
   { immediate: true }
 );
@@ -450,7 +481,13 @@ function loadMaterial() {
     (res) => {
       if (!res?.success) {
         toasted(false, 'Failed to load material details');
+        return;
       }
+
+      const loaded = extractRow(res?.data || res);
+      resolvedMaterialId.value = String(
+        loaded?.id || loaded?.uuid || materialId.value || ''
+      ).trim();
     },
     true
   );
@@ -460,16 +497,7 @@ function loadInteractions() {
   if (!materialIdentity.value) return;
 
   statsReq.send(() => getMaterialInteractionStats(materialIdentity.value, activeType.value));
-  myFeedbackReq.send(
-    () => getMaterialFeedback({ material_id: materialIdentity.value, material_type: activeType.value, mine: true }),
-    (res) => {
-      const row = rowsFromPayload(res?.data || res)?.[0] || null;
-      feedbackRecordId.value = row?.id || null;
-      reviewForm.rating = normalizeNumber(row?.rating, normalizeNumber(statsReq.response.value?.my_rating, 5) || 5);
-      reviewForm.comment = row?.comment || statsReq.response.value?.my_comment || '';
-    }
-  );
-  allFeedbackReq.send(() => getMaterialFeedback({ material_id: materialIdentity.value, material_type: activeType.value }));
+  feedbackReq.send(() => getMaterialFeedbackByMaterial(activeType.value, materialIdentity.value, { page: 1, size: 10 }));
   favoriteReq.send(
     () => getMaterialFavorites({ material_id: materialIdentity.value, material_type: activeType.value }),
     (res) => {
@@ -488,7 +516,7 @@ watch([materialId, activeType], loadMaterial, { immediate: true });
 watch([materialIdentity, activeType], () => {
   generatedDescription.value = '';
   hasGeneratedSummary.value = false;
-  if (materialIdentity.value) {
+  if (String(materialIdentity.value || '').trim()) {
     loadInteractions();
   }
 });

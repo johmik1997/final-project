@@ -1,13 +1,12 @@
 from dataclasses import dataclass, field
 from typing import List
 
-from django.conf import settings
-from django.core.mail import send_mail
 from django.utils import timezone
 from django.db import transaction
 
 from .models import Borrow, Reservation
 from user_mgt.access import get_active_library_policy
+from material_mgt.services import send_templated_email_background
 
 @dataclass
 class OverdueNotificationSummary:
@@ -53,24 +52,16 @@ def process_overdue_borrows_and_notify():
         overdue_days = (now.date() - borrow.due_date.date()).days
         member_name = (borrow.member.first_name or borrow.member.id_number).strip()
         
-        subject = "Library Notice: Borrowed Material Is Overdue"
-        message = (
-            f"Dear {member_name},\n\n"
-            f"This is a reminder that your borrowed material "
-            f"'{borrow.material.title}' became overdue on "
-            f"{borrow.due_date.date().isoformat()}.\n"
-            f"It is currently {overdue_days} day(s) overdue.\n\n"
-            "Please return it as soon as possible to avoid additional fines.\n\n"
-            "Thank you."
-        )
-
         try:
-            send_mail(
-                subject=subject,
-                message=message,
-                from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-                recipient_list=[member_email],
-                fail_silently=False,
+            send_templated_email_background(
+                template_name="overdue_borrow",
+                context={
+                    "member_name": member_name,
+                    "material_title": borrow.material.title,
+                    "due_date": borrow.due_date.date().isoformat(),
+                    "overdue_days": overdue_days,
+                },
+                recipients=[member_email],
             )
             borrow.overdue_notified_at = now
             borrow.save(update_fields=["overdue_notified_at"])
@@ -117,21 +108,14 @@ def notify_reserved_members_material_available(material):
             continue
 
         member_name = (reservation.member.first_name or reservation.member.id_number).strip()
-        subject = "Library Update: Reserved Material Is Available"
-        message = (
-            f"Dear {member_name},\n\n"
-            f"The material you reserved, '{reservation.material_id.title}', is now available.\n"
-            "Please visit the library promptly to borrow it.\n\n"
-            "Thank you."
-        )
-
         try:
-            send_mail(
-                subject=subject,
-                message=message,
-                from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-                recipient_list=[member_email],
-                fail_silently=False,
+            send_templated_email_background(
+                template_name="reservation_available",
+                context={
+                    "member_name": member_name,
+                    "material_title": reservation.material_id.title,
+                },
+                recipients=[member_email],
             )
             reservation.availability_notified_at = now
             reservation.save(update_fields=["availability_notified_at"])
@@ -181,3 +165,35 @@ def finalize_return_for_borrow(borrow):
 
         transaction.on_commit(lambda: notify_reserved_members_material_available(material))
         return locked_borrow
+
+
+def notify_borrow_success(borrow):
+    member_email = (borrow.member.email or "").strip()
+    if not member_email:
+        return
+    member_name = (borrow.member.first_name or borrow.member.id_number).strip()
+    send_templated_email_background(
+        template_name="borrow_success",
+        context={
+            "member_name": member_name,
+            "material_title": borrow.material.title,
+            "due_date": borrow.due_date.date().isoformat(),
+        },
+        recipients=[member_email],
+    )
+
+
+def notify_return_success(borrow, return_record):
+    member_email = (borrow.member.email or "").strip()
+    if not member_email:
+        return
+    member_name = (borrow.member.first_name or borrow.member.id_number).strip()
+    send_templated_email_background(
+        template_name="return_success",
+        context={
+            "member_name": member_name,
+            "material_title": borrow.material.title,
+            "fine_amount": return_record.fine_amount,
+        },
+        recipients=[member_email],
+    )
