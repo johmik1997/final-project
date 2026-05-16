@@ -2,11 +2,10 @@ from decimal import Decimal, InvalidOperation
 from rest_framework import serializers
 from .models import Payment
 from transactions.models import Return
-from user_mgt.models import Member
 
 class PaymentSerializer(serializers.ModelSerializer):
-    member_name = serializers.CharField(source="member_id.user_id.first_name", read_only=True)
-    member_email = serializers.CharField(source="member_id.user_id.email", read_only=True)
+    member_name = serializers.CharField(source="member_id.first_name", read_only=True)
+    member_email = serializers.CharField(source="member_id.email", read_only=True)
 
     class Meta:
         model = Payment
@@ -46,11 +45,7 @@ class ChapaInitPaymentSerializer(serializers.Serializer):
         if amount <= 0:
             raise serializers.ValidationError({"return_id": "This return has no payable fine."})
 
-        member_profile = Member.objects.filter(user_id=member_user).first()
-        if not member_profile:
-            raise serializers.ValidationError({"return_id": "Member profile not found."})
-
         attrs["return_obj"] = return_obj
-        attrs["member_profile"] = member_profile
+        attrs["member_user"] = member_user
         attrs["amount"] = amount
         return attrs

@@ -8,17 +8,13 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from .access import get_user_library, is_super_admin, normalize_role
-from .models import DepartmentHead, Library, LibraryPolicy, Member, Staff, User
+from .models import Library, LibraryPolicy, User
 
 # --- Helper Functions ---
 
 
 def _get_user_profile(user):
-    for rel in ("member", "department_head", "staff"):
-        profile = getattr(user, rel, None)
-        if profile:
-            return profile
-    return None
+    return user
 
 
 def _build_media_url(request, file_field):
@@ -144,7 +140,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
     phone = serializers.CharField(write_only=True, required=True, max_length=15)
     department = serializers.CharField(write_only=True, required=False, max_length=70)
-    user_type = serializers.ChoiceField(write_only=True, required=False, choices=[c[0] for c in Member.USER_TYPE])
+    user_type = serializers.ChoiceField(write_only=True, required=False, choices=[c[0] for c in User.USER_TYPE])
     library = serializers.PrimaryKeyRelatedField(
         queryset=Library.objects.all(),
         required=False,
@@ -206,11 +202,12 @@ class UserCreateSerializer(serializers.ModelSerializer):
                 user = User.objects.create_user(password=password, **validated_data)
 
             if role_norm == "MEMBER":
-                Member.objects.get_or_create(user_id=user, defaults={"department": department, "user_type": user_type, "phone": phone})
+                user.department = department
+                user.user_type = user_type
             elif role_norm == "DEPARTMENTHEAD":
-                DepartmentHead.objects.get_or_create(user_id=user, defaults={"department": department, "phone": phone})
-            else:
-                Staff.objects.get_or_create(user_id=user, defaults={"phone": phone})
+                user.department = department
+            user.phone = phone
+            user.save()
             return user
 
 
@@ -381,8 +378,7 @@ class AdminUserListSerializer(serializers.ModelSerializer):
         return f"{obj.first_name} {obj.last_name}".strip() or obj.id_number
 
     def get_staff_id(self, obj):
-        staff = getattr(obj, "staff", None)
-        return str(staff.id) if staff else None
+        return str(obj.id)
 
     class Meta:
         model = User
@@ -392,7 +388,7 @@ class AdminUserListSerializer(serializers.ModelSerializer):
 class UserUpdateSerializer(serializers.ModelSerializer):
     phone = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=15)
     department = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=70)
-    user_type = serializers.ChoiceField(write_only=True, required=False, choices=[c[0] for c in Member.USER_TYPE])
+    user_type = serializers.ChoiceField(write_only=True, required=False, choices=[c[0] for c in User.USER_TYPE])
     library = serializers.PrimaryKeyRelatedField(
         queryset=Library.objects.all(),
         required=False,
@@ -444,17 +440,10 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"library": "Library is required for this role."})
 
         if target_role == "MEMBER":
-            if not (attrs.get("department") or getattr(getattr(self.instance, "member", None), "department", None)):
+            if not (attrs.get("department") or getattr(self.instance, "department", None)):
                 raise serializers.ValidationError({"department": "Department is required for MEMBER."})
-            if not (attrs.get("user_type") or getattr(getattr(self.instance, "member", None), "user_type", None)):
+            if not (attrs.get("user_type") or getattr(self.instance, "user_type", None)):
                 raise serializers.ValidationError({"user_type": "User type is required for MEMBER."})
-
-        if getattr(self.instance, "member", None) and target_role != "MEMBER":
-            raise serializers.ValidationError("This user already has a Member profile and cannot change away from MEMBER.")
-        if getattr(self.instance, "department_head", None) and target_role != "DEPARTMENTHEAD":
-            raise serializers.ValidationError("This user already has a DepartmentHead profile and cannot change away from DEPARTMENT HEAD.")
-        if getattr(self.instance, "staff", None) and target_role not in {"STACKSTAFF", "TECHNICALSTAFF", "FRONTDESKSTAFF", "ADMIN", "SUPERADMIN"}:
-            raise serializers.ValidationError("This user already has a Staff profile and must remain on a staff-compatible role.")
 
         return attrs
 
@@ -467,27 +456,12 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             setattr(instance, key, value)
         instance.save()
 
-        member_profile = getattr(instance, "member", None)
-        if member_profile:
-            if phone is not None:
-                member_profile.phone = phone
-            if department is not None:
-                member_profile.department = department
-            if user_type is not None:
-                member_profile.user_type = user_type
-            member_profile.save()
-
-        department_head_profile = getattr(instance, "department_head", None)
-        if department_head_profile:
-            if phone is not None:
-                department_head_profile.phone = phone
-            if department is not None:
-                department_head_profile.department = department
-            department_head_profile.save()
-
-        staff_profile = getattr(instance, "staff", None)
-        if staff_profile and phone is not None:
-            staff_profile.phone = phone
-            staff_profile.save()
+        if phone is not None:
+            instance.phone = phone
+        if department is not None:
+            instance.department = department
+        if user_type is not None:
+            instance.user_type = user_type
+        instance.save()
 
         return instance

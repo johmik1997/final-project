@@ -69,7 +69,6 @@ class ChapaInitializePaymentView(APIView):
 
         return_obj = serializer.validated_data["return_obj"]
         member_user = return_obj.borrow.member
-        member_profile = serializer.validated_data["member_profile"]
         amount = serializer.validated_data["amount"]
 
         if _norm_role(getattr(request.user, "role", None)) == "MEMBER" and request.user != member_user:
@@ -80,7 +79,7 @@ class ChapaInitializePaymentView(APIView):
             if not payment:
                 tx_ref = f"RTN-{uuid.uuid4().hex[:12].upper()}"
                 payment = Payment.objects.create(
-                    member_id=member_profile,
+                    member_id=member_user,
                     return_id=return_obj,
                     fine_amount=amount,
                     method="TRANSFER",

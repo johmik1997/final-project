@@ -68,7 +68,7 @@ class Borrow(models.Model):
     overdue_notified_at = models.DateTimeField(null=True, blank=True)
 
     created_by = models.ForeignKey(
-        "backend.Staff",
+        "backend.User",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -106,7 +106,7 @@ class Circulation(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     created_by = models.ForeignKey(
-        "backend.Staff",
+        "backend.User",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -128,7 +128,7 @@ class Return(models.Model):
         default=0
     )
     created_by = models.ForeignKey(
-        "backend.Staff",
+        "backend.User",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

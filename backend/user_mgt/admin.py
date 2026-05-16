@@ -63,8 +63,5 @@ class UserAdmin(admin.ModelAdmin):
 
 
 admin.site.register(models.User, UserAdmin)
-admin.site.register(models.Member)
-admin.site.register(models.DepartmentHead)
-admin.site.register(models.Staff)
 admin.site.register(models.Notification)
 admin.site.register(models.Library)

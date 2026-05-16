@@ -5,7 +5,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from material_mgt.models import PhysicalMaterial
-from user_mgt.models import Staff, User
+from user_mgt.models import Library, User
 
 from .models import Borrow, Return
 from .services import sync_overdue_borrow_statuses
@@ -13,6 +13,12 @@ from .services import sync_overdue_borrow_statuses
 
 class OverdueBorrowSyncTests(APITestCase):
     def setUp(self):
+        self.library = Library.objects.create(
+            name="Main Library",
+            campus="Main",
+            location="Campus",
+            phone="12345",
+        )
         self.user = User.objects.create_user(
             id_number="MEM-300",
             email="member300@example.com",
@@ -20,6 +26,9 @@ class OverdueBorrowSyncTests(APITestCase):
             first_name="Member",
             last_name="ThreeHundred",
             role="MEMBER",
+            department="CS",
+            user_type="STUDENT",
+            library=self.library,
         )
         self.client.force_authenticate(user=self.user)
 
@@ -37,6 +46,7 @@ class OverdueBorrowSyncTests(APITestCase):
             condition="GOOD",
             location="STACK",
             can_borrow=True,
+            library=self.library,
         )
 
     def test_service_marks_overdue_borrow(self):
@@ -70,6 +80,12 @@ class OverdueBorrowSyncTests(APITestCase):
 
 class ReturnPaymentGateTests(APITestCase):
     def setUp(self):
+        self.library = Library.objects.create(
+            name="IoT Library",
+            campus="IoT",
+            location="Campus",
+            phone="99999",
+        )
         self.stack_staff_user = User.objects.create_user(
             id_number="STF-100",
             email="stackstaff100@example.com",
@@ -77,8 +93,8 @@ class ReturnPaymentGateTests(APITestCase):
             first_name="Stack",
             last_name="Staff",
             role="STACK STAFF",
+            library=self.library,
         )
-        self.stack_staff_profile = Staff.objects.create(user_id=self.stack_staff_user)
 
         self.member_user = User.objects.create_user(
             id_number="MEM-101",
@@ -87,6 +103,9 @@ class ReturnPaymentGateTests(APITestCase):
             first_name="Member",
             last_name="OneZeroOne",
             role="MEMBER",
+            department="CS",
+            user_type="STUDENT",
+            library=self.library,
         )
 
         self.material = PhysicalMaterial.objects.create(
@@ -103,6 +122,7 @@ class ReturnPaymentGateTests(APITestCase):
             condition="GOOD",
             location="STACK",
             can_borrow=True,
+            library=self.library,
         )
 
         self.client.force_authenticate(user=self.stack_staff_user)
@@ -113,7 +133,7 @@ class ReturnPaymentGateTests(APITestCase):
             material=self.material,
             due_date=timezone.now() + timedelta(days=1),
             status="BORROWED",
-            created_by=self.stack_staff_profile,
+            created_by=self.stack_staff_user,
         )
 
         response = self.client.post(
@@ -138,7 +158,7 @@ class ReturnPaymentGateTests(APITestCase):
             material=self.material,
             due_date=timezone.now() - timedelta(days=2),
             status="OVERDUE",
-            created_by=self.stack_staff_profile,
+            created_by=self.stack_staff_user,
         )
 
         response = self.client.post(

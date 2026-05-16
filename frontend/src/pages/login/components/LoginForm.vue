@@ -37,10 +37,7 @@
 
         <!-- Options Row -->
         <div class="flex flex-col sm:flex-row justify-between text-sm gap-3">
-          <label class="flex gap-2 items-center cursor-pointer transition" :class="isDarkTheme ? 'text-slate-400 hover:text-slate-300' : 'text-slate-500 hover:text-slate-700'">
-            <input type="checkbox" class="w-4 h-4 rounded transition-colors" :class="isDarkTheme ? 'border-white/20 bg-slate-800 text-amber-500 focus:ring-amber-500 focus:ring-offset-0 focus:ring-offset-slate-900' : 'border-gray-300 bg-white text-amber-500 focus:ring-amber-500'">
-            <span>Keep me logged in</span>
-          </label>
+          
           <span
             @click="router.push({ path: '/forgot-password', query: {} })"
             class="text-amber-500 font-medium cursor-pointer hover:text-amber-400 transition-colors"
@@ -59,19 +56,7 @@
             'bg-gradient-to-r from-amber-500 to-red-500 text-white font-semibold py-3 rounded-xl hover:shadow-lg hover:shadow-amber-500/25 transition-all duration-300': true
           }"
         />
-        
-        <!-- Sign Up Link -->
-        <div class="text-center mt-4">
-          <p :class="isDarkTheme ? 'text-slate-400' : 'text-slate-500'" class="text-sm">
-            Don't have an account?
-            <span
-              @click="router.push('/signUp')"
-              class="text-amber-500 font-medium cursor-pointer hover:text-amber-400 transition-colors ml-1"
-            >
-              Sign Up
-            </span>
-          </p>
-        </div>
+
       </div>
     </NewFormLayout>
   </div>
