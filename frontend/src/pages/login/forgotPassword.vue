@@ -47,10 +47,11 @@
             <div class="space-y-6">
               <!-- Email Input -->
               <div>
-                <label class="block text-sm font-medium mb-2" :class="isDarkTheme ? 'text-slate-300' : 'text-slate-700'">
-                  Email Address
-                </label>
-                <Input
+            
+                 <Input name="email" label="Email Address" validation="required|email" 
+          :attributes="{ placeholder: 'Enter email' }" />
+                <!-- <Input
+                  label="email"
                   name="email"
                   validation="required|email"
                   :attributes="{ 
@@ -58,7 +59,7 @@
                     class: 'w-full px-4 py-3 rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent'
                   }"
                   :theme="isDarkTheme ? 'dark' : 'light'"
-                />
+                /> -->
               </div>
 
               <!-- Submit Button -->
@@ -106,10 +107,8 @@ import { ref, onMounted } from "vue";
 const router = useRouter();
 const resetRequest = useApiRequest();
 
-// Theme state
 const isDarkTheme = ref(true);
 
-// Toggle theme function
 function toggleTheme() {
   isDarkTheme.value = !isDarkTheme.value;
   localStorage.setItem('theme', isDarkTheme.value ? 'dark' : 'light');

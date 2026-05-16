@@ -30,8 +30,8 @@ function update({ values }, userId, currentUser = {}) {
   }
 
   if (values.role !== 'MEMBER') {
-    values.user_type = null;
-    values.department = null;
+    // values.user_type = null;
+    // values.department = null;
   }
 
   updateReq.send(
