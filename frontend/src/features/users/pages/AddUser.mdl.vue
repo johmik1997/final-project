@@ -9,9 +9,8 @@ import { closeModal } from '@customizer/modal-x';
 import { useApiRequest } from '@/composables/useApiRequest';
 import { CreateUser } from '../Api/UserApi';
 import { useUsers } from '../store/userStore';
-import { allRequest, toasted } from '@/utils/utils';
+import { toasted } from '@/utils/utils';
 import { useForm } from '@/components/new_form_builder/useForm';
-import { getAllRole } from '../../roles/Api/RoleApi';
 import { computed, ref } from 'vue';
 import { emitEntityMutation } from '@/utils/entitySync';
 import { getAllLibrary } from '@/features/library/api/libraryApi';
@@ -20,23 +19,19 @@ const { submit } = useForm('addform');
 
 const user = useUsers();
 const req = useApiRequest();
-const rolereq = useApiRequest();
 const libraryReq = useApiRequest();
 const role = ref('');
-
-// Fetch roles
-rolereq.send(() =>
-  allRequest({
-    roles: getAllRole({ page: 1, limit: 500 }),
-  })
-);
 libraryReq.send(() => getAllLibrary({ page: 1, size: 200 }));
 
 const libraryOptions = computed(() => libraryReq.response.value?.libraries || libraryReq.response.value?.results || libraryReq.response.value || []);
-const libraryRequired = computed(() => role.value !== 'MEMBER' && role.value !== 'SUPER ADMIN');
+const showLibraryField = computed(() => Boolean(role.value) && !['MEMBER', 'SUPER ADMIN'].includes(role.value));
+const roleOptions = ['MEMBER', 'STACK STAFF', 'TECHNICAL STAFF', 'FRONT DESK STAFF', 'ADMIN', 'SUPER ADMIN'];
 
 // Submit handler
 function create({ values }) {
+  if (values.role === 'MEMBER') {
+    delete values.library;
+  }
   if (values.role !== 'MEMBER') {
     delete values.user_type;
     delete values.department;
@@ -79,24 +74,25 @@ function create({ values }) {
         
         <!-- <Input name="grandFatherName" validation="required|alpha" label="Grandfather Name"
           :attributes="{ placeholder: 'Enter Grandfather Name' }" />-->
-        
+
         <Input name="phone" label="Mobile Phone" validation="required|phone" 
           :attributes="{ placeholder: 'Enter Mobile Phone' }" />
 
         <Select
+          v-if="showLibraryField"
           :obj="true"
           name="library"
           label="Library"
-          :validation="libraryRequired ? 'required' : ''"
+          validation="required"
           :options="libraryOptions.map((library) => ({
             label: library?.name,
             value: library?.id,
           }))"
-          :attributes="{ placeholder: libraryRequired ? 'Select Library' : 'Select Library (optional)', required: libraryRequired }"
+          :attributes="{ placeholder: 'Select Library', required: true }"
         />
        
              <Select v-model="role" name="role" label="Role" validation="required"
-          :options="['MEMBER', 'STACK STAFF','TECHNICAL STAFF','FRONT DESK STAFF','ADMIN','SUPER ADMIN']"   
+          :options="roleOptions"
           :attributes="{ placeholder: 'Select Role', required: true }" />
             <Select v-if="role=='MEMBER'" name="user_type" label="User Type" validation="required"
           :options="['TEACHER', 'STUDENT']"

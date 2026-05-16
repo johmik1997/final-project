@@ -50,6 +50,10 @@ export function generateMaterialDescription(payload = {}) {
   return api.addAuthenticationHeader().post("/material/generate-description/", payload);
 }
 
+export function sendLibraryAssistantMessage(payload = {}) {
+  return api.addAuthenticationHeader().post("/material/assistant-chat/", payload);
+}
+
 export function getMaterialInteractionStats(materialId, materialType = "physical") {
   const qr = getQueryFormObject({
     material_id: materialId,

@@ -22,6 +22,10 @@ def is_admin_like(user):
     return normalize_role(getattr(user, "role", None)) in {"ADMIN", "SUPERADMIN"}
 
 
+def is_member(user):
+    return normalize_role(getattr(user, "role", None)) == "MEMBER"
+
+
 def is_staff_like(user):
     return normalize_role(getattr(user, "role", None)) in {
         "STACKSTAFF",
@@ -35,6 +39,10 @@ def is_staff_like(user):
 def get_user_library(user):
     library = getattr(user, "library", None)
     return library
+
+
+def has_global_material_access(user):
+    return is_super_admin(user) or is_member(user)
 
 
 def get_active_library_policy(library=None):

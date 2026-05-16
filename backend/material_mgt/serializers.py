@@ -1,6 +1,15 @@
 from material_mgt.models import *
 from rest_framework import serializers
 
+
+def _build_media_url(request, file_field):
+    if not file_field:
+        return None
+    url = getattr(file_field, "url", str(file_field) or None)
+    if not url:
+        return None
+    return request.build_absolute_uri(url) if request else url
+
 class PhysicalMaterialSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source="created_by.full_name", read_only=True)
     library_name = serializers.CharField(source="library.name", read_only=True)
@@ -46,6 +55,7 @@ class MaterialTargetMixinSerializer(serializers.ModelSerializer):
     user_id = serializers.UUIDField(source="user.id", read_only=True)
     user_name = serializers.SerializerMethodField(read_only=True)
     material_title = serializers.SerializerMethodField(read_only=True)
+    material = serializers.SerializerMethodField(read_only=True)
 
     def get_user_name(self, obj):
         user = getattr(obj, "user", None)
@@ -56,6 +66,47 @@ class MaterialTargetMixinSerializer(serializers.ModelSerializer):
     def get_material_title(self, obj):
         material = obj.physical_material or obj.digital_material
         return getattr(material, "title", None)
+
+    def get_material(self, obj):
+        material = obj.physical_material or obj.digital_material
+        if not material:
+            return None
+
+        data = {
+            "id": str(material.id),
+            "title": getattr(material, "title", None),
+            "author": getattr(material, "author", None),
+            "category": getattr(material, "category", None),
+            "genre": getattr(material, "genre", None),
+            "department": getattr(material, "department", None),
+            "language": getattr(material, "language", None),
+            "isbn": getattr(material, "isbn", None),
+            "published_date": getattr(material, "published_date", None),
+            "library_id": str(material.library_id) if getattr(material, "library_id", None) else None,
+            "library_name": getattr(getattr(material, "library", None), "name", None),
+        }
+
+        if getattr(obj, "physical_material_id", None):
+            data.update(
+                {
+                    "condition": getattr(material, "condition", None),
+                    "location": getattr(material, "location", None),
+                    "available_copies": getattr(material, "available_copies", None),
+                    "total_copies": getattr(material, "total_copies", None),
+                    "can_borrow": getattr(material, "can_borrow", None),
+                    "price": getattr(material, "price", None),
+                }
+            )
+        else:
+            data.update(
+                {
+                    "format": getattr(material, "format", None),
+                    "file_size": getattr(material, "file_size", None),
+                    "file_url": _build_media_url(self.context.get("request"), getattr(material, "file", None)),
+                }
+            )
+
+        return data
 
     def _set_material_target(self, attrs, material_type, material_id):
         if material_type == "physical":
@@ -117,6 +168,7 @@ class MaterialFeedbackSerializer(MaterialTargetMixinSerializer):
             "material_type",
             "material_id",
             "material_title",
+            "material",
             "rating",
             "comment",
             "created_at",
@@ -153,6 +205,7 @@ class MaterialFavoriteSerializer(MaterialTargetMixinSerializer):
             "material_type",
             "material_id",
             "material_title",
+            "material",
             "created_at",
         ]
         read_only_fields = ["id", "user_id", "user_name", "material_title", "created_at"]
@@ -168,6 +221,7 @@ class MaterialBookmarkSerializer(MaterialTargetMixinSerializer):
             "material_type",
             "material_id",
             "material_title",
+            "material",
             "created_at",
         ]
         read_only_fields = ["id", "user_id", "user_name", "material_title", "created_at"]

@@ -17,6 +17,12 @@ export default [
     component: () => import('@/features/material/pages/MaterialReader.vue'),
     meta: { requiresAuth: true, permissions: [] }
   },
+  {
+    path: '/saved-materials',
+    name: 'Saved Materials',
+    component: () => import('@/features/material/pages/SavedMaterials.vue'),
+    meta: { requiresAuth: true, permissions: [] }
+  },
   { 
     path: '/edit_material/:materialUuid', 
     name: 'edit material', 

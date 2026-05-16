@@ -18,6 +18,14 @@ export default [
     roles: ["MEMBER", "ADMIN","STACK STAFF", "SUPER ADMIN","TECHNICAL STAFF"],
   },
   {
+    path: "/saved-materials",
+    name: "Saved Materials",
+    icon: icons.library,
+    meta: { requiresAuth: true, permissions: [] },
+    type: "Management",
+    roles: ["MEMBER", "ADMIN", "STACK STAFF", "SUPER ADMIN", "TECHNICAL STAFF", "FRONT DESK STAFF"],
+  },
+  {
     path: "/borrows",
     name: "Borrow",
     icon: icons.borrow,

@@ -165,6 +165,9 @@ class UserCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("ADMIN users cannot create ADMIN or SUPER ADMIN accounts.")
         if creator_role not in {"ADMIN", "SUPERADMIN"}:
             raise serializers.ValidationError("Only ADMIN or SUPER ADMIN can create users.")
+        if target_role_norm == "MEMBER":
+            attrs["library"] = None
+            chosen_library = None
         if creator_role != "SUPERADMIN":
             if not actor_library:
                 raise serializers.ValidationError("Your account is not assigned to a library yet.")
@@ -193,6 +196,8 @@ class UserCreateSerializer(serializers.ModelSerializer):
         department = validated_data.pop("department", "UNASSIGNED")
         user_type = validated_data.pop("user_type", None)
         role_norm = normalize_role(validated_data.get("role"))
+        if role_norm == "MEMBER":
+            validated_data["library"] = None
         
         with transaction.atomic():
             if role_norm == "SUPERADMIN":
@@ -440,6 +445,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"library": "Library is required for this role."})
 
         if target_role == "MEMBER":
+            attrs["library"] = None
             if not (attrs.get("department") or getattr(self.instance, "department", None)):
                 raise serializers.ValidationError({"department": "Department is required for MEMBER."})
             if not (attrs.get("user_type") or getattr(self.instance, "user_type", None)):

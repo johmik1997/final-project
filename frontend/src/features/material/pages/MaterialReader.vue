@@ -23,6 +23,7 @@ function extractRow(payload) {
   if (Array.isArray(payload)) return payload[0] || null;
   if (Array.isArray(payload?.content)) return payload.content[0] || null;
   if (Array.isArray(payload?.data)) return payload.data[0] || null;
+  if (Array.isArray(payload?.result)) return payload.result[0] || null;
   if (Array.isArray(payload?.results)) return payload.results[0] || null;
   return payload;
 }

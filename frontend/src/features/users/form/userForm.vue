@@ -16,7 +16,15 @@ const props = defineProps({
 })
 
 const role = ref('')
-const libraryRequired = computed(() => role.value !== 'MEMBER' && role.value !== 'SUPER ADMIN')
+const showLibraryField = computed(() => Boolean(role.value) && !['MEMBER', 'SUPER ADMIN'].includes(role.value))
+const roleOptions = [
+  'MEMBER',
+  'STACK STAFF',
+  'TECHNICAL STAFF',
+  'FRONT DESK STAFF',
+  'ADMIN',
+  'SUPER ADMIN'
+]
 
 watch(
   () => props.user,
@@ -75,13 +83,14 @@ watch(
     />
 
     <Select
+      v-if="showLibraryField"
       :obj="true"
       name="library"
       label="Library"
-      :validation="libraryRequired ? 'required' : ''"
+      validation="required"
       :value="user?.library_id || user?.library || ''"
       :options="libraries.map((library) => ({ label: library?.name, value: library?.id }))"
-      :attributes="{ placeholder: libraryRequired ? 'Select Library' : 'Select Library (optional)', required: libraryRequired }"
+      :attributes="{ placeholder: 'Select Library', required: true }"
     />
 
     <Select
@@ -89,14 +98,7 @@ watch(
       name="role"
       label="Role"
       validation="required"
-      :options="[
-        'MEMBER',
-        'STACK STAFF',
-        'TECHNICAL STAFF',
-        'FRONT DESK STAFF',
-        'ADMIN',
-        'SUPER ADMIN'
-      ]"
+      :options="roleOptions"
       :attributes="{ placeholder: 'Select Role' }"
     />
 

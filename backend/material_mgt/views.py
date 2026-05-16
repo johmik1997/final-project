@@ -5,7 +5,7 @@ from rest_framework.generics import CreateAPIView
 from rest_framework.generics import DestroyAPIView
 from django.contrib.auth import update_session_auth_hash
 from rest_framework.exceptions import ValidationError
-from rest_framework.permissions import IsAuthenticated, SAFE_METHODS, BasePermission
+from rest_framework.permissions import AllowAny, IsAuthenticated, SAFE_METHODS, BasePermission
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.views import APIView
@@ -14,7 +14,12 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 import os
 from material_mgt.models import *
 from material_mgt.serializers import *
-from user_mgt.access import get_user_library, is_super_admin, normalize_role
+from user_mgt.access import (
+    get_user_library,
+    has_global_material_access,
+    is_super_admin,
+    normalize_role,
+)
 from user_mgt.permissions import *
 # Create your views here.
 
@@ -44,7 +49,7 @@ def _resolve_material_or_error(material_type, material_id):
 
 
 def _user_can_access_material(user, material):
-    if is_super_admin(user):
+    if has_global_material_access(user):
         return True
     user_library = get_user_library(user)
     return bool(user_library and getattr(material, "library_id", None) == user_library.id)
@@ -67,13 +72,13 @@ def _get_staff_profile_or_error(user):
     return user
 
 class PhysicalMaterialViewSet(ModelViewSet):
-    queryset = PhysicalMaterial.objects.select_related("library", "created_by").all()
+    queryset = PhysicalMaterial.objects.select_related("library", "created_by").order_by("title", "id")
     serializer_class = PhysicalMaterialSerializer
     # permission_classes = [IsAuthenticated, IsTechnicalStaffForWrite]
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        if is_super_admin(self.request.user):
+        if has_global_material_access(self.request.user):
             return queryset
 
         actor_library = get_user_library(self.request.user)
@@ -120,13 +125,13 @@ class PhysicalMaterialViewSet(ModelViewSet):
 
 
 class DigitalMaterialViewSet(ModelViewSet):
-    queryset = DigitalMaterial.objects.select_related("library", "created_by").all()
+    queryset = DigitalMaterial.objects.select_related("library", "created_by").order_by("title", "id")
     serializer_class = DigitalMaterialSerializer
     # permission_classes = [IsAuthenticated, IsTechnicalStaffForWrite]
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        if is_super_admin(self.request.user):
+        if has_global_material_access(self.request.user):
             return queryset
 
         actor_library = get_user_library(self.request.user)
@@ -342,6 +347,141 @@ class MaterialInteractionStatsAPIView(APIView):
         )
 
 
+def _get_openai_api_key():
+    return os.getenv("OPENAI_API_KEY", "").strip()
+
+
+def _get_openai_model(env_name, default="gpt-5-mini"):
+    return os.getenv(env_name, default).strip() or default
+
+
+def _extract_openai_text(payload):
+    output_text = str(payload.get("output_text", "") or "").strip()
+    if output_text:
+        return output_text
+
+    text_parts = []
+    for item in payload.get("output", []) or []:
+        for content in item.get("content", []) or []:
+            text = str(content.get("text", "") or "").strip()
+            if text:
+                text_parts.append(text)
+
+    return "\n".join(text_parts).strip()
+
+
+def _request_openai_text(*, model, prompt, max_output_tokens):
+    api_key = _get_openai_api_key()
+    if not api_key:
+        return {
+            "success": False,
+            "status": status.HTTP_503_SERVICE_UNAVAILABLE,
+            "error": "AI service is not configured.",
+            "text": "",
+        }
+
+    try:
+        response = requests.post(
+            "https://api.openai.com/v1/responses",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "input": prompt,
+                "max_output_tokens": max_output_tokens,
+            },
+            timeout=30,
+        )
+    except requests.RequestException:
+        return {
+            "success": False,
+            "status": status.HTTP_502_BAD_GATEWAY,
+            "error": "Failed to reach AI provider.",
+            "text": "",
+        }
+
+    if response.status_code >= 400:
+        try:
+            provider_error = response.json().get("error", {}).get("message", "")
+        except ValueError:
+            provider_error = ""
+
+        return {
+            "success": False,
+            "status": status.HTTP_502_BAD_GATEWAY,
+            "error": provider_error or "AI provider returned an error.",
+            "text": "",
+        }
+
+    try:
+        payload = response.json()
+    except ValueError:
+        return {
+            "success": False,
+            "status": status.HTTP_502_BAD_GATEWAY,
+            "error": "Invalid AI provider response.",
+            "text": "",
+        }
+
+    return {
+        "success": True,
+        "status": status.HTTP_200_OK,
+        "error": "",
+        "payload": payload,
+        "text": _extract_openai_text(payload),
+    }
+
+
+def _build_chat_prompt(prompt, history=None):
+    sanitized_history = history if isinstance(history, list) else []
+    lines = [
+        "You are a helpful virtual assistant for a university digital library system.",
+        "Answer clearly and politely.",
+        "Focus on library policies, reservations, borrowing, returns, fines, and material discovery.",
+        "If you are unsure, say so and avoid inventing facts.",
+        "",
+        "Conversation so far:",
+    ]
+
+    for item in sanitized_history[-10:]:
+        role = str(item.get("role", "")).strip().lower()
+        content = str(item.get("content", "")).strip()
+        if not content:
+            continue
+        speaker = "User" if role == "user" else "Assistant"
+        lines.append(f"{speaker}: {content}")
+
+    lines.append(f"User: {prompt}")
+    lines.append("Assistant:")
+    return "\n".join(lines)
+
+
+class LibraryAssistantChatAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        prompt = str(request.data.get("prompt", "")).strip()
+        history = request.data.get("history", [])
+
+        if not prompt:
+            raise ValidationError({"prompt": "Prompt is required."})
+
+        model = _get_openai_model("OPENAI_CHAT_MODEL")
+        result = _request_openai_text(
+            model=model,
+            prompt=_build_chat_prompt(prompt, history),
+            max_output_tokens=400,
+        )
+
+        if not result["success"]:
+            return Response({"detail": result["error"]}, status=result["status"])
+
+        message = result["text"] or "I am sorry, I could not generate an answer right now."
+        return Response({"message": message, "model": model}, status=status.HTTP_200_OK)
+
+
 
 
 class GenerateMaterialDescriptionAPIView(APIView):
@@ -354,14 +494,7 @@ class GenerateMaterialDescriptionAPIView(APIView):
         if not title or not author:
             raise ValidationError({"detail": "Both title and author are required."})
 
-        api_key = os.getenv("OPENAI_API_KEY", "").strip()
-        if not api_key:
-            return Response(
-                {"detail": "AI description service is not configured."},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-
-        model = os.getenv("OPENAI_DESCRIPTION_MODEL", "gpt-5-mini").strip() or "gpt-5-mini"
+        model = _get_openai_model("OPENAI_DESCRIPTION_MODEL")
 
         prompt = (
             f"Title: {title}\n"
@@ -370,54 +503,17 @@ class GenerateMaterialDescriptionAPIView(APIView):
             "Use clear, neutral language and avoid inventing specific facts."
         )
 
-        try:
-            response = requests.post(
-                "https://api.openai.com/v1/responses",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "input": prompt,
-                    "temperature": 0.7,
-                    "max_output_tokens": 220,
-                },
-                timeout=30,
-            )
-        except requests.RequestException:
-            return Response(
-                {"detail": "Failed to reach AI provider."},
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
+        result = _request_openai_text(
+            model=model,
+            prompt=prompt,
+            max_output_tokens=220,
+        )
 
-        # Handle HTTP errors from provider
-        if response.status_code >= 400:
-            try:
-                provider_error = response.json().get("error", {}).get("message", "")
-            except Exception:
-                provider_error = ""
+        if not result["success"]:
+            return Response({"detail": result["error"]}, status=result["status"])
 
-            return Response(
-                {"detail": provider_error or "AI provider returned an error."},
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
+        description = result["text"]
 
-        # Parse response safely (Responses API format)
-        try:
-            payload = response.json()
-        except ValueError:
-            return Response(
-                {"detail": "Invalid AI provider response."},
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
-
-        try:
-            description = payload["output"][0]["content"][0]["text"].strip()
-        except (KeyError, IndexError, TypeError):
-            description = ""
-
-        # Fallback if AI returns empty
         if not description:
             description = f"{title} by {author} is a library material available for borrowing."
 

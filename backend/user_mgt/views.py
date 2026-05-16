@@ -294,7 +294,10 @@ class UserListAPIView(ListAPIView):
             actor_library = get_user_library(actor)
             if actor_role == "ADMIN" or actor_role == "STACKSTAFF" or actor_role == "TECHNICALSTAFF" or actor_role == "FRONTDESKSTAFF":
                 if actor_library:
-                    queryset = queryset.filter(library=actor_library)
+                    queryset = queryset.filter(
+                        Q(library=actor_library)
+                        | Q(role__iexact="MEMBER", library__isnull=True)
+                    )
                 else:
                     queryset = queryset.filter(pk=actor.pk)
             elif actor_library:
@@ -318,7 +321,9 @@ class UserUpdateAPIView(APIView):
 
         if not is_super_admin(request.user):
             actor_library = get_user_library(request.user)
-            if not actor_library or user.library_id != actor_library.id:
+            target_role = normalize_role(getattr(user, "role", None))
+            user_is_global_member = target_role == "MEMBER" and user.library_id is None
+            if not actor_library or (user.library_id != actor_library.id and not user_is_global_member):
                 return Response({"detail": "You can only update users in your library."}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = UserUpdateSerializer(user, data=request.data, context={"request": request})

@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     DigitalMaterialViewSet,
     GenerateMaterialDescriptionAPIView,
+    LibraryAssistantChatAPIView,
     MaterialBookmarkViewSet,
     MaterialFavoriteViewSet,
     MaterialFeedbackViewSet,
@@ -19,6 +20,7 @@ router.register("favorites", MaterialFavoriteViewSet, basename="material-favorit
 router.register("bookmarks", MaterialBookmarkViewSet, basename="material-bookmark")
 
 urlpatterns = [
+    path("assistant-chat/", LibraryAssistantChatAPIView.as_view(), name="library-assistant-chat"),
     path("generate-description/", GenerateMaterialDescriptionAPIView.as_view(), name="generate-material-description"),
     path("interactions/stats/", MaterialInteractionStatsAPIView.as_view(), name="material-interaction-stats"),
     path("", include(router.urls)),
