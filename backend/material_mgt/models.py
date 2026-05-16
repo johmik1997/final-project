@@ -33,7 +33,7 @@ class DigitalMaterial (models.Model):
         blank=True,
     )
     created_by = models.ForeignKey(
-        "backend.Staff",
+        "backend.User",
         on_delete=models.SET_NULL,
         related_name='digital_material',
         null=True,         
@@ -102,7 +102,7 @@ class PhysicalMaterial (models.Model):
         blank=True,
     )
     created_by = models.ForeignKey(
-        "backend.Staff",
+        "backend.User",
         on_delete=models.SET_NULL,
         related_name='physical_material',
         null=True, 

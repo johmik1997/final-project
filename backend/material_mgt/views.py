@@ -15,7 +15,6 @@ import os
 from material_mgt.models import *
 from material_mgt.serializers import *
 from user_mgt.access import get_user_library, is_super_admin, normalize_role
-from user_mgt.models import Staff
 from user_mgt.permissions import *
 # Create your views here.
 
@@ -62,28 +61,13 @@ class IsOwnerOrReadOnly(BasePermission):
 
 
 def _get_staff_profile_or_error(user):
-    staff_profile = getattr(user, "staff", None)
-    if staff_profile:
-        return staff_profile
-
-    if getattr(user, "member", None):
-        raise ValidationError(
-            {"detail": "This user still has a MEMBER profile. Convert/remove Member profile first."}
-        )
-
-    if getattr(user, "department_head", None):
-        raise ValidationError(
-            {"detail": "This user still has a DEPARTMENT HEAD profile. Convert/remove it first."}
-        )
-
     staff_roles = {"STACKSTAFF", "TECHNICALSTAFF", "FRONTDESKSTAFF", "ADMIN", "SUPERADMIN"}
     if normalize_role(getattr(user, "role", None)) not in staff_roles:
         raise ValidationError({"detail": "Only staff-role users can create materials."})
-
-    return Staff.objects.create(user_id=user)
+    return user
 
 class PhysicalMaterialViewSet(ModelViewSet):
-    queryset = PhysicalMaterial.objects.select_related("library", "created_by__user_id").all()
+    queryset = PhysicalMaterial.objects.select_related("library", "created_by").all()
     serializer_class = PhysicalMaterialSerializer
     # permission_classes = [IsAuthenticated, IsTechnicalStaffForWrite]
 
@@ -136,7 +120,7 @@ class PhysicalMaterialViewSet(ModelViewSet):
 
 
 class DigitalMaterialViewSet(ModelViewSet):
-    queryset = DigitalMaterial.objects.select_related("library", "created_by__user_id").all()
+    queryset = DigitalMaterial.objects.select_related("library", "created_by").all()
     serializer_class = DigitalMaterialSerializer
     # permission_classes = [IsAuthenticated, IsTechnicalStaffForWrite]
 

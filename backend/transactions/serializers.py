@@ -239,10 +239,6 @@ class BorrowSerializer(serializers.ModelSerializer):
         user = getattr(request, "user", None)
         if not user or normalize_role(getattr(user, "role", None)) != "STACKSTAFF":
             raise serializers.ValidationError("Only STACK STAFF can create borrows.")
-
-        staff = getattr(user, "staff", None)
-        if not staff:
-            raise serializers.ValidationError("Staff profile not found.")
         material = validated_data["material"]
         reservation = validated_data.get("reservation")
         policy = get_active_library_policy(getattr(material, "library", None))
@@ -264,7 +260,7 @@ class BorrowSerializer(serializers.ModelSerializer):
             # set due date (example: 7 days)
             validated_data["material"] = locked_material
             validated_data["due_date"] = timezone.now() + timezone.timedelta(days=borrow_duration_days)
-            validated_data["created_by"] = staff
+            validated_data["created_by"] = user
 
             # if borrowed from reservation, expire reservation
             if reservation:
@@ -357,10 +353,6 @@ class ReturnSerializer(serializers.ModelSerializer):
         if not user or normalize_role(getattr(user, "role", None)) != "STACKSTAFF":
             raise serializers.ValidationError("Only STACK STAFF can record returns.")
 
-        staff = getattr(user, "staff", None)
-        if not staff:
-            raise serializers.ValidationError("Staff profile not found.")
-
         borrow = validated_data["borrow"]
         now = timezone.now()
         policy = get_active_library_policy(getattr(borrow.material, "library", None))
@@ -369,7 +361,7 @@ class ReturnSerializer(serializers.ModelSerializer):
         overdue_days = calculate_overdue_days(borrow.due_date, now=now, grace_period_days=grace_period_days)
         daily_fine_rate = Decimal(str(getattr(policy, "overdue_daily_rate", getattr(settings, "LIBRARY_DAILY_FINE_RATE", "0"))))
         validated_data["fine_amount"] = daily_fine_rate * overdue_days
-        validated_data["created_by"] = staff
+        validated_data["created_by"] = user
 
         return_record = super().create(validated_data)
 

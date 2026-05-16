@@ -6,18 +6,10 @@ from rest_framework import status
 from django.utils import timezone
 from material_mgt.models import *
 from user_mgt.access import get_user_library, is_super_admin, normalize_role
-from user_mgt.models import Staff
 from .serializers import *
 from .services import sync_overdue_borrow_statuses
 from user_mgt.permissions import *
 # Create your views here.
-
-
-def _get_staff_profile_or_error(user):
-    staff_profile = getattr(user, "staff", None)
-    if staff_profile:
-        return staff_profile
-    return Staff.objects.create(user_id=user)
 
 class ReservationViewSet(ModelViewSet):
     queryset = Reservation.objects.select_related("member__library", "material_id__library").all()
@@ -56,13 +48,13 @@ class ReservationViewSet(ModelViewSet):
         return Response(status=204)
 class BorrowViewSet(ModelViewSet):
     
-    queryset = Borrow.objects.select_related("member__library", "material__library", "created_by__user_id").all().order_by("-borrow_date")
+    queryset = Borrow.objects.select_related("member__library", "material__library", "created_by").all().order_by("-borrow_date")
     serializer_class = BorrowSerializer
     permission_classes = [IsStackStaffForWrite]
 
     def get_queryset(self):
         sync_overdue_borrow_statuses()
-        queryset = Borrow.objects.select_related("member__library", "material__library", "created_by__user_id").all().order_by("-borrow_date")
+        queryset = Borrow.objects.select_related("member__library", "material__library", "created_by").all().order_by("-borrow_date")
         user = self.request.user
         if normalize_role(getattr(user, "role", None)) == "MEMBER":
             return queryset.filter(member=user)
@@ -86,7 +78,7 @@ class BorrowViewSet(ModelViewSet):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        queryset = Borrow.objects.select_related("member__library", "material__library", "created_by__user_id").filter(member=user).order_by("-borrow_date")
+        queryset = Borrow.objects.select_related("member__library", "material__library", "created_by").filter(member=user).order_by("-borrow_date")
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
@@ -98,13 +90,13 @@ class BorrowViewSet(ModelViewSet):
 
 class ReturnViewSet(ModelViewSet):
 
-    queryset = Return.objects.select_related("borrow__member__library", "borrow__material__library", "created_by__user_id").all().order_by("-return_date")
+    queryset = Return.objects.select_related("borrow__member__library", "borrow__material__library", "created_by").all().order_by("-return_date")
     serializer_class = ReturnSerializer
     # permission_classes = [IsStackStaffForWrite]
 
     def get_queryset(self):
         user = self.request.user
-        base_qs = Return.objects.select_related("borrow__member__library", "borrow__material__library", "created_by__user_id").all().order_by("-return_date")
+        base_qs = Return.objects.select_related("borrow__member__library", "borrow__material__library", "created_by").all().order_by("-return_date")
         if normalize_role(getattr(user, "role", None)) == "MEMBER":
             return base_qs.filter(borrow__member=user)
         if not is_super_admin(user):

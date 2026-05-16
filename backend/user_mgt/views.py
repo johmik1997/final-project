@@ -11,7 +11,7 @@ from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from django.db.models import Q
 
 from .access import get_user_library, is_admin_like, is_super_admin, normalize_role
-from .models import Library, Staff, User
+from .models import Library, User
 from .permissions import CanCreateUsers, CanDeleteUsers, IsSuperAdminForWrite
 from .serializers import (
     AdminUserListSerializer,
@@ -153,25 +153,23 @@ class LibraryViewSet(ModelViewSet):
         queryset = self.filter_queryset(self.get_queryset())
         if is_super_admin(request.user):
             staffs = (
-                Staff.objects.select_related("user_id")
-                .filter(user_id__role__in=["ADMIN", "SUPER ADMIN"])
-                .order_by("user_id__first_name", "user_id__last_name")
+                User.objects.filter(role__in=["ADMIN", "SUPER ADMIN"])
+                .order_by("first_name", "last_name")
             )
         else:
             actor_library = get_user_library(request.user)
             staffs = (
-                Staff.objects.select_related("user_id")
-                .filter(user_id__role__in=["ADMIN", "SUPER ADMIN"], user_id__library=actor_library)
-                .order_by("user_id__first_name", "user_id__last_name")
+                User.objects.filter(role__in=["ADMIN", "SUPER ADMIN"], library=actor_library)
+                .order_by("first_name", "last_name")
             )
         admin_staffs = [
             {
                 "id": str(staff.id),
                 "staff_id": str(staff.id),
-                "user_id": str(staff.user_id.id),
-                "name": staff.full_name or staff.user_id.id_number,
-                "role": staff.user_id.role,
-                "library_id": str(staff.user_id.library_id) if staff.user_id.library_id else None,
+                "user_id": str(staff.id),
+                "name": f"{staff.first_name} {staff.last_name}".strip() or staff.id_number,
+                "role": staff.role,
+                "library_id": str(staff.library_id) if staff.library_id else None,
             }
             for staff in staffs
         ]
@@ -334,20 +332,19 @@ class AdminUsersAPIView(APIView):
 
     def get(self, request):
         staffs = (
-            Staff.objects.select_related("user_id")
-            .filter(user_id__role__in=["ADMIN"])
-            .order_by("user_id__first_name", "user_id__last_name")
+            User.objects.filter(role__in=["ADMIN"])
+            .order_by("first_name", "last_name")
         )
         if not is_super_admin(request.user):
             actor_library = get_user_library(request.user)
-            staffs = staffs.filter(Q(user_id__library=actor_library) | Q(user_id__library__isnull=True))
+            staffs = staffs.filter(Q(library=actor_library) | Q(library__isnull=True))
         data = [
             {
                 "staff_id": str(staff.id),
-                "name": staff.full_name or staff.user_id.id_number,
-                "role": staff.user_id.role,
-                "user_id": str(staff.user_id.id),
-                "library_id": str(staff.user_id.library_id) if staff.user_id.library_id else None,
+                "name": f"{staff.first_name} {staff.last_name}".strip() or staff.id_number,
+                "role": staff.role,
+                "user_id": str(staff.id),
+                "library_id": str(staff.library_id) if staff.library_id else None,
             }
             for staff in staffs
         ]
