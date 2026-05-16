@@ -195,6 +195,45 @@ class MaterialFeedbackViewSet(ModelViewSet):
         serializer.save(user=self.request.user)
 
 
+class RatingViewSet(ModelViewSet):
+    """ViewSet for material ratings (primary interface)."""
+    serializer_class = RatingSerializer
+    permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
+    queryset = Rating.objects.select_related("user", "physical_material", "digital_material")
+
+    def get_queryset(self):
+        queryset = self.queryset
+
+        material_type = self.request.query_params.get("material_type")
+        material_id = self.request.query_params.get("material_id")
+        mine_only = _parse_bool(self.request.query_params.get("mine"), default=False)
+
+        if mine_only:
+            queryset = queryset.filter(user=self.request.user)
+
+        if bool(material_type) ^ bool(material_id):
+            raise ValidationError(
+                {"detail": "Provide material_type and material_id together."}
+            )
+
+        if material_type and material_id:
+            material_type_norm = material_type.strip().lower()
+            if material_type_norm == "physical":
+                queryset = queryset.filter(physical_material_id=material_id)
+            elif material_type_norm == "digital":
+                queryset = queryset.filter(digital_material_id=material_id)
+            else:
+                raise ValidationError({"material_type": "Use either 'physical' or 'digital'."})
+
+        return queryset
+
+    def perform_create(self, serializer):
+        target_material = serializer.validated_data.get("physical_material") or serializer.validated_data.get("digital_material")
+        if target_material and not _user_can_access_material(self.request.user, target_material):
+            raise ValidationError({"detail": "You can only rate materials from your library."})
+        serializer.save(user=self.request.user)
+
+
 class MaterialFavoriteViewSet(ModelViewSet):
     serializer_class = MaterialFavoriteSerializer
     permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
@@ -305,7 +344,7 @@ class MaterialInteractionStatsAPIView(APIView):
         if not _user_can_access_material(request.user, material):
             raise ValidationError({"detail": "You can only access interaction stats for materials in your library."})
 
-        feedback_qs = MaterialFeedback.objects.all()
+        feedback_qs = Rating.objects.all()
         favorites_qs = MaterialFavorite.objects.all()
         bookmarks_qs = MaterialBookmark.objects.all()
 
@@ -323,10 +362,10 @@ class MaterialInteractionStatsAPIView(APIView):
         aggregate = feedback_qs.aggregate(
             average_rating=Avg("rating"),
             ratings_count=Count("id"),
-            comments_count=Count("id", filter=~Q(comment="")),
+            reviews_count=Count("id", filter=~Q(review="")),
         )
 
-        my_feedback = MaterialFeedback.objects.filter(**mine_filter).first()
+        my_rating = Rating.objects.filter(**mine_filter).first()
 
         return Response(
             {
@@ -335,13 +374,13 @@ class MaterialInteractionStatsAPIView(APIView):
                 "material_title": material.title,
                 "average_rating": round(float(aggregate["average_rating"] or 0), 2),
                 "ratings_count": int(aggregate["ratings_count"] or 0),
-                "comments_count": int(aggregate["comments_count"] or 0),
+                "reviews_count": int(aggregate["reviews_count"] or 0),
                 "favorites_count": favorites_qs.count(),
                 "bookmarks_count": bookmarks_qs.count(),
                 "is_favorited": MaterialFavorite.objects.filter(**mine_filter).exists(),
                 "is_bookmarked": MaterialBookmark.objects.filter(**mine_filter).exists(),
-                "my_rating": my_feedback.rating if my_feedback else None,
-                "my_comment": my_feedback.comment if my_feedback else "",
+                "my_rating": my_rating.rating if my_rating else None,
+                "my_review": my_rating.review if my_rating else "",
             },
             status=status.HTTP_200_OK,
         )

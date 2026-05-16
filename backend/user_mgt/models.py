@@ -136,6 +136,91 @@ class Notification(models.Model):
     sent_at = models.DateTimeField(auto_now_add=True)
 
 
+# Email Templates
+class EmailTemplate(models.Model):
+    """Reusable email templates for various notifications."""
+    TEMPLATE_TYPES = [
+        ('OVERDUE', 'Overdue Notification'),
+        ('RESERVED_AVAILABLE', 'Reserved Material Available'),
+        ('BORROW_CONFIRMATION', 'Borrow Confirmation'),
+        ('RETURN_CONFIRMATION', 'Return Confirmation'),
+        ('CUSTOM', 'Custom Template'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    template_type = models.CharField(max_length=50, choices=TEMPLATE_TYPES, unique=True)
+    name = models.CharField(max_length=255)
+    subject = models.CharField(max_length=500)
+    body_html = models.TextField()
+    body_text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['template_type']
+    
+    def __str__(self):
+        return f"{self.name} ({self.template_type})"
+
+
+# Email Log
+class EmailLog(models.Model):
+    """Log of all sent emails for auditing and debugging."""
+    EMAIL_STATUS = [
+        ('SENT', 'Sent'),
+        ('FAILED', 'Failed'),
+        ('PENDING', 'Pending'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    recipient_email = models.EmailField()
+    recipient_user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='email_logs'
+    )
+    email_type = models.CharField(max_length=50)
+    subject = models.CharField(max_length=500)
+    template = models.ForeignKey(
+        EmailTemplate,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='logs'
+    )
+    status = models.CharField(max_length=20, choices=EMAIL_STATUS, default='PENDING')
+    error_message = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    borrow_id = models.ForeignKey(
+        'transactions.Borrow',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='email_logs'
+    )
+    reservation_id = models.ForeignKey(
+        'transactions.Reservation',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='email_logs'
+    )
+    
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['recipient_email', '-created_at']),
+            models.Index(fields=['status', '-created_at']),
+            models.Index(fields=['email_type', '-created_at']),
+        ]
+    
+    def __str__(self):
+        return f"Email to {self.recipient_email} ({self.status})"
+
+
 # Library Table
 class Library(models.Model):
     id = models.UUIDField(primary_key=True, default= uuid.uuid4,editable=False)

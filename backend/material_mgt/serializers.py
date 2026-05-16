@@ -13,17 +13,34 @@ def _build_media_url(request, file_field):
 class PhysicalMaterialSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source="created_by.full_name", read_only=True)
     library_name = serializers.CharField(source="library.name", read_only=True)
+    image_url = serializers.SerializerMethodField(read_only=True)
+    average_rating = serializers.SerializerMethodField(read_only=True)
+    total_ratings = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = PhysicalMaterial
         fields = "__all__"
         read_only_fields = ["created_by", "created_by_name", "library_name"]
+    
+    def get_image_url(self, obj):
+        return _build_media_url(self.context.get("request"), obj.image)
+    
+    def get_average_rating(self, obj):
+        from django.db.models import Avg
+        rating_avg = Rating.objects.filter(physical_material=obj).aggregate(avg=Avg('rating'))['avg']
+        return round(rating_avg, 1) if rating_avg else None
+    
+    def get_total_ratings(self, obj):
+        return Rating.objects.filter(physical_material=obj).count()
 
 
 class DigitalMaterialSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source="created_by.full_name", read_only=True)
     library_name = serializers.CharField(source="library.name", read_only=True)
     file = serializers.FileField(required=True)
+    image_url = serializers.SerializerMethodField(read_only=True)
+    average_rating = serializers.SerializerMethodField(read_only=True)
+    total_ratings = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = DigitalMaterial
@@ -44,6 +61,17 @@ class DigitalMaterialSerializer(serializers.ModelSerializer):
             attrs["format"] = ext
             attrs["file_size"] = f"{size_mb} MB"
         return attrs
+    
+    def get_image_url(self, obj):
+        return _build_media_url(self.context.get("request"), obj.image)
+    
+    def get_average_rating(self, obj):
+        from django.db.models import Avg
+        rating_avg = Rating.objects.filter(digital_material=obj).aggregate(avg=Avg('rating'))['avg']
+        return round(rating_avg, 1) if rating_avg else None
+    
+    def get_total_ratings(self, obj):
+        return Rating.objects.filter(digital_material=obj).count()
 
 
 MATERIAL_TYPE_CHOICES = (("physical", "physical"), ("digital", "digital"))
@@ -193,6 +221,79 @@ class MaterialFeedbackSerializer(MaterialTargetMixinSerializer):
                 )
 
         return attrs
+
+
+# Rating serializers (using Rating model - new primary interface)
+class RatingSerializer(MaterialTargetMixinSerializer):
+    """Serializer for creating/updating material ratings."""
+    rating = serializers.IntegerField(min_value=1, max_value=5)
+    review = serializers.CharField(required=False, allow_blank=True, max_length=2000)
+
+    class Meta:
+        model = Rating
+        fields = [
+            "id",
+            "user_id",
+            "user_name",
+            "material_type",
+            "material_id",
+            "material_title",
+            "material",
+            "rating",
+            "review",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "user_id", "user_name", "material_title", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+
+        if self.instance is None and user and user.is_authenticated:
+            exists = Rating.objects.filter(
+                user=user,
+                physical_material=attrs.get("physical_material"),
+                digital_material=attrs.get("digital_material"),
+            ).exists()
+            if exists:
+                raise serializers.ValidationError(
+                    {"detail": "You have already rated this material. Use PUT to update your rating."}
+                )
+
+        return attrs
+
+
+class RatingListSerializer(serializers.ModelSerializer):
+    """Serializer for listing ratings on a material."""
+    user_name = serializers.SerializerMethodField()
+    
+    def get_user_name(self, obj):
+        user = obj.user
+        return f"{user.first_name} {user.last_name}".strip() or user.id_number
+    
+    class Meta:
+        model = Rating
+        fields = [
+            "id",
+            "user_name",
+            "rating",
+            "review",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "user_name", "created_at", "updated_at"]
+
+
+class RatingStatisticsSerializer(serializers.Serializer):
+    """Serializer for rating statistics on a material."""
+    average_rating = serializers.FloatField()
+    total_ratings = serializers.IntegerField()
+    rating_distribution = serializers.DictField(
+        child=serializers.IntegerField(),
+        help_text="Count of ratings per star level (1-5)"
+    )
 
 
 class MaterialFavoriteSerializer(MaterialTargetMixinSerializer):

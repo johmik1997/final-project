@@ -25,6 +25,12 @@ class DigitalMaterial (models.Model):
     format = models.CharField(max_length=20)
     file_size = models.CharField(max_length=10)
     file = models.FileField(upload_to="digital_materials/")
+    image = models.ImageField(
+        upload_to="material_images/digital/",
+        null=True,
+        blank=True,
+        help_text="Optional custom image for the material"
+    )
     library = models.ForeignKey(
         "backend.Library",
         on_delete=models.PROTECT,
@@ -60,7 +66,6 @@ class DigitalMaterial (models.Model):
     def __str__(self):
         return self.title
     
-# Physical Material Table
 class PhysicalMaterial (models.Model):
     id = models.UUIDField(primary_key=True, default= uuid.uuid4,editable=False)
     title = models.CharField(max_length=255)    
@@ -94,6 +99,12 @@ class PhysicalMaterial (models.Model):
     ]
     location = models.CharField(max_length=20,choices=LOCATION,default='STACK')
     can_borrow  = models.BooleanField(default=True)
+    image = models.ImageField(
+        upload_to="material_images/physical/",
+        null=True,
+        blank=True,
+        help_text="Optional custom image for the material"
+    )
     library = models.ForeignKey(
         "backend.Library",
         on_delete=models.PROTECT,
@@ -118,7 +129,75 @@ class PhysicalMaterial (models.Model):
         return self.title
 
 
+class Rating(models.Model):
+    """User ratings for materials (1-5 stars with optional review)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="ratings",
+    )
+    physical_material = models.ForeignKey(
+        "material_mgt.PhysicalMaterial",
+        on_delete=models.CASCADE,
+        related_name="ratings",
+        null=True,
+        blank=True,
+    )
+    digital_material = models.ForeignKey(
+        "material_mgt.DigitalMaterial",
+        on_delete=models.CASCADE,
+        related_name="ratings",
+        null=True,
+        blank=True,
+    )
+    rating = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(5)]
+    )
+    review = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        indexes = [
+            models.Index(fields=["user", "updated_at"]),
+            models.Index(fields=["physical_material", "updated_at"]),
+            models.Index(fields=["digital_material", "updated_at"]),
+            models.Index(fields=["rating"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                name="rating_exactly_one_material",
+                condition=(
+                    (Q(physical_material__isnull=False) & Q(digital_material__isnull=True))
+                    | (Q(physical_material__isnull=True) & Q(digital_material__isnull=False))
+                ),
+            ),
+            models.CheckConstraint(
+                name="rating_range",
+                condition=Q(rating__gte=1, rating__lte=5),
+            ),
+            models.UniqueConstraint(
+                fields=["user", "physical_material"],
+                condition=Q(physical_material__isnull=False),
+                name="rating_unique_user_physical",
+            ),
+            models.UniqueConstraint(
+                fields=["user", "digital_material"],
+                condition=Q(digital_material__isnull=False),
+                name="rating_unique_user_digital",
+            ),
+        ]
+    
+    def __str__(self):
+        material = self.physical_material or self.digital_material
+        return f"{self.user} rated {material} {self.rating} stars"
+
+
+# Legacy alias for backward compatibility
 class MaterialFeedback(models.Model):
+    """Legacy feedback model - use Rating instead."""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

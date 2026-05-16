@@ -10,12 +10,14 @@ from .views import (
     MaterialFeedbackViewSet,
     MaterialInteractionStatsAPIView,
     PhysicalMaterialViewSet,
+    RatingViewSet,
 )
 
 router = DefaultRouter()
 router.register("physical-materials", PhysicalMaterialViewSet, basename="physical-material")
 router.register("digital-materials", DigitalMaterialViewSet, basename="digital-material")
 router.register("feedback", MaterialFeedbackViewSet, basename="material-feedback")
+router.register("ratings", RatingViewSet, basename="material-rating")
 router.register("favorites", MaterialFavoriteViewSet, basename="material-favorite")
 router.register("bookmarks", MaterialBookmarkViewSet, basename="material-bookmark")
 

@@ -7,6 +7,14 @@ admin.site.register(DigitalMaterial)
 admin.site.register(PhysicalMaterial)
 
 
+@admin.register(Rating)
+class RatingAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "rating", "physical_material", "digital_material", "updated_at")
+    search_fields = ("user__id_number", "user__first_name", "user__last_name")
+    list_filter = ("rating", "created_at", "updated_at")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
 @admin.register(MaterialFeedback)
 class MaterialFeedbackAdmin(admin.ModelAdmin):
     list_display = ("id", "user", "rating", "physical_material", "digital_material", "updated_at")

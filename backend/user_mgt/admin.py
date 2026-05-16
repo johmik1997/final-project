@@ -65,3 +65,23 @@ class UserAdmin(admin.ModelAdmin):
 admin.site.register(models.User, UserAdmin)
 admin.site.register(models.Notification)
 admin.site.register(models.Library)
+
+
+@admin.register(models.EmailTemplate)
+class EmailTemplateAdmin(admin.ModelAdmin):
+    list_display = ("template_type", "name", "created_at", "updated_at")
+    search_fields = ("name", "subject")
+    list_filter = ("template_type", "created_at")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(models.EmailLog)
+class EmailLogAdmin(admin.ModelAdmin):
+    list_display = ("id", "recipient_email", "email_type", "status", "created_at")
+    search_fields = ("recipient_email", "email_type")
+    list_filter = ("status", "email_type", "created_at")
+    readonly_fields = ("id", "created_at", "sent_at")
+    
+    def has_add_permission(self, request):
+        return False  # Email logs are created programmatically
+
