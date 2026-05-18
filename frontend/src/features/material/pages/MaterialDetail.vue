@@ -75,8 +75,8 @@
             <!-- Action Buttons for Borrow/Read - Hide for members -->
             <div v-if="!currentUserIsMember && ((!isPhysicalMaterial && canShowDigitalActions) || (isPhysicalMaterial && !currentUserIsMember))" class="primary-actions">
               <template v-if="isPhysicalMaterial">
-                <button class="btn-primary" :disabled="!canBorrow" @click="goToBorrow">
-                  Borrow now
+                <button class="btn-primary" :disabled="!canBorrow" @click="handlePrimaryAction">
+                  {{ borrowButtonText }}
                 </button>
                 <button class="btn-secondary" :disabled="!canReserve" @click="goToReserve">
                   <BaseIcon :path="mdiLockClock" size="16" />
@@ -143,14 +143,25 @@
               placeholder="Share what makes this material useful, memorable, or difficult..."
             />
 
-            <button 
-              class="btn-submit" 
-              :disabled="reviewReq.pending.value" 
-              @click="saveReview"
-            >
-              <span v-if="reviewReq.pending.value" class="button-spinner"></span>
-              <span v-else>{{ feedbackRecordId ? 'Update Review' : 'Submit Review' }}</span>
-            </button>
+            <div class="review-actions">
+              <button 
+                class="btn-submit" 
+                :disabled="reviewReq.pending.value" 
+                @click="saveReview"
+              >
+                <span v-if="reviewReq.pending.value" class="button-spinner"></span>
+                <span v-else>{{ feedbackRecordId ? 'Update Review' : 'Submit Review' }}</span>
+              </button>
+              
+              <button 
+                v-if="feedbackRecordId"
+                class="btn-delete-review" 
+                :disabled="reviewReq.pending.value" 
+                @click="deleteReview"
+              >
+                Delete Review
+              </button>
+            </div>
           </div>
         </div>
 
@@ -190,6 +201,19 @@
                 <div>
                   <p class="spec-label">ISBN</p>
                   <p class="spec-value">{{ material?.isbn || 'N/A' }}</p>
+                </div>
+              </div>
+              <div v-if="isPhysicalMaterial && material?.barcode" class="spec-item flex flex-col items-start gap-1">
+                <BaseIcon :path="mdiBarcode" size="16" />
+                <div>
+                  <p class="spec-label">Barcode</p>
+                  <p class="spec-value font-mono">{{ material?.barcode }}</p>
+                  <div class="mt-2 flex flex-col items-start gap-1">
+                    <img :src="barcodeUrl" alt="Barcode" class="h-10 object-contain border p-1 bg-white rounded" />
+                    <button @click="printBarcode" class="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium flex items-center gap-1 mt-1">
+                      <BaseIcon :path="mdiPrinter" size="12" /> Print Barcode
+                    </button>
+                  </div>
                 </div>
               </div>
               <div v-if="isPhysicalMaterial" class="spec-item">
@@ -276,6 +300,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useApiRequest } from '@/composables/useApiRequest';
 import { normalizeRoleValue } from '@/utils/authNavigation';
+import { openModal } from '@customizer/modal-x';
 import {
   createMaterialBookmark,
   createMaterialFavorite,
@@ -289,6 +314,7 @@ import {
   removeMaterialBookmark,
   removeMaterialFavorite,
   updateMaterialFeedback,
+  deleteMaterialFeedback,
 } from '../api/materialApi';
 import { toasted } from '@/utils/utils';
 import BaseIcon from '@/components/base/BaseIcon.vue';
@@ -309,6 +335,7 @@ import {
   mdiMapMarkerOutline,
   mdiOpenInNew,
   mdiPackageVariantClosed,
+  mdiPrinter,
   mdiSchoolOutline,
   mdiStar,
   mdiStarOutline,
@@ -473,6 +500,56 @@ watch(
   { immediate: true }
 );
 
+const barcodeUrl = computed(() => {
+  const base = import.meta.env.v_API_URL || 'http://localhost:8000';
+  const stripBase = base.replace(/\/+$/, '');
+  const apiBase = stripBase.endsWith('/api') ? stripBase : `${stripBase}/api`;
+  return `${apiBase}/material/barcode/${material.value?.id || material.value?.uuid}/`;
+});
+
+function printBarcode() {
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) return;
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>Print Barcode - ${material.value?.title || ''}</title>
+        <style>
+          body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-family: sans-serif;
+            margin: 0;
+            padding: 0;
+          }
+          img {
+            max-width: 300px;
+            height: auto;
+          }
+          h2 {
+            margin-top: 15px;
+            font-size: 16px;
+          }
+          p {
+            margin: 5px 0 0 0;
+            font-size: 14px;
+            color: #666;
+          }
+        </style>
+      </head>
+      <body>
+        <img src="${barcodeUrl.value}" onload="window.print(); window.close();" />
+        <h2>${material.value?.title || ''}</h2>
+        <p>Barcode: ${material.value?.barcode || ''}</p>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+}
+
 function loadMaterial() {
   if (!materialId.value) return;
 
@@ -559,6 +636,25 @@ function toAbsoluteUrl(filePath) {
   if (/^https?:\/\//i.test(value)) return value;
   if (value.startsWith('//')) return `${window.location.protocol}${value}`;
   return `${resolveBackendOrigin()}${value.startsWith('/') ? '' : '/'}${value}`;
+}
+
+const borrowButtonText = computed(() => {
+  if (currentUserRole.value === 'FRONT DESK STAFF') {
+    return 'Make Circulation';
+  }
+  if (currentUserRole.value === 'STACK STAFF') {
+    return 'Make Borrow';
+  }
+  return 'Borrow now';
+});
+
+function handlePrimaryAction() {
+  if (!canBorrow.value) return;
+  if (currentUserRole.value === 'FRONT DESK STAFF') {
+    openModal('AddCirculation', { material: material.value });
+  } else {
+    goToBorrow();
+  }
 }
 
 function goToBorrow() {
@@ -688,10 +784,56 @@ function saveReview() {
     loadInteractions();
   });
 }
+
+function deleteReview() {
+  if (!feedbackRecordId.value) return;
+  
+  if (!confirm('Are you sure you want to delete your review?')) return;
+
+  reviewReq.send(
+    () => deleteMaterialFeedback(feedbackRecordId.value),
+    (res) => {
+      if (!res?.success) {
+        toasted(false, 'Failed to delete review', res?.error || 'Unknown error');
+        return;
+      }
+
+      toasted(true, 'Review deleted successfully');
+      reviewForm.rating = 5;
+      reviewForm.comment = '';
+      feedbackRecordId.value = null;
+      loadInteractions();
+    }
+  );
+}
 </script>
 
 <style scoped>
 /* All styles remain the same as before */
+.review-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.btn-delete-review {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  background-color: #fee2e2;
+  color: #ef4444;
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: all 0.2s;
+}
+.btn-delete-review:hover {
+  background-color: #fecaca;
+}
+.dark .btn-delete-review {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+}
+.dark .btn-delete-review:hover {
+  background-color: rgba(239, 68, 68, 0.2);
+}
 /* Container */
 .material-detail-container {
   min-height: 100vh;

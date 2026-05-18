@@ -5,10 +5,14 @@ from django.core.cache import cache
 from django.core.mail import send_mail
 from django.db import transaction
 from rest_framework import serializers
+from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from rest_framework.exceptions import ValidationError
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from transactions.models import Borrow, Reservation
 from .access import get_user_library, is_super_admin, normalize_role
-from .models import Library, LibraryPolicy, User
+from .models import Library, LibraryPolicy, Notification, User
 
 # --- Helper Functions ---
 
@@ -471,3 +475,9 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         instance.save()
 
         return instance
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = '__all__'

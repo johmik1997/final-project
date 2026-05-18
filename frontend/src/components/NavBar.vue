@@ -1,5 +1,6 @@
 <script setup>
-import { ref, onMounted, watch } from "vue";
+import { ref, onMounted, onBeforeUnmount, watch } from "vue";
+import ApiService from "@/service/ApiService";
 import { useAuth } from "@/stores/auth";
 import { useRouter } from "vue-router";
 import icons from "@/utils/icons";
@@ -94,6 +95,71 @@ const navigateTo = (page) => {
   }
   showUserMenu.value = false;
 };
+
+// System Notifications
+const api = new ApiService();
+const notifications = ref([]);
+const showNotifications = ref(false);
+const unreadCount = ref(0);
+let pollInterval = null;
+
+async function fetchNotifications() {
+  try {
+    const res = await api.addAuthenticationHeader().get("/user/notifications/");
+    const data = res?.data || res || [];
+    notifications.value = Array.isArray(data) ? data : (data?.results || data?.result || []);
+    unreadCount.value = notifications.value.filter(n => n.status === 'UNREAD').length;
+  } catch (err) {
+    console.error("Failed to fetch notifications:", err);
+  }
+}
+
+async function markAsRead(notification) {
+  if (notification.status === 'READ') return;
+  try {
+    await api.addAuthenticationHeader().post(`/user/notifications/${notification.id}/mark_read/`);
+    notification.status = 'READ';
+    unreadCount.value = Math.max(0, unreadCount.value - 1);
+  } catch (err) {
+    console.error("Failed to mark notification as read:", err);
+  }
+}
+
+async function markAllAsRead() {
+  const unread = notifications.value.filter(n => n.status === 'UNREAD');
+  for (const n of unread) {
+    await markAsRead(n);
+  }
+}
+
+function toggleNotifications() {
+  showNotifications.value = !showNotifications.value;
+  showUserMenu.value = false;
+  if (showNotifications.value) {
+    fetchNotifications();
+  }
+}
+
+function formatTime(timeStr) {
+  if (!timeStr) return "";
+  try {
+    const date = new Date(timeStr);
+    return date.toLocaleString();
+  } catch {
+    return timeStr;
+  }
+}
+
+onMounted(() => {
+  fetchNotifications();
+  pollInterval = setInterval(fetchNotifications, 15000);
+});
+
+onBeforeUnmount(() => {
+  if (pollInterval) {
+    clearInterval(pollInterval);
+  }
+});
 </script>
 
 <template>
@@ -117,10 +183,46 @@ const navigateTo = (page) => {
     <!-- Right Side - User Info and Icons -->
     <div class="flex gap-2 sm:gap-4 items-center">
       <!-- Icons - Hidden on mobile, visible on tablet and up -->
-      <div class="hidden sm:flex gap-2 items-center">
-        <button class="icon-button">
-          <i v-html="icons.notification" />
-        </button>
+      <div class="hidden sm:flex gap-2 items-center relative">
+        <div class="relative">
+          <button @click="toggleNotifications" class="icon-button relative">
+            <i v-html="icons.notification" />
+            <!-- Unread badge -->
+            <span v-if="unreadCount > 0" class="unread-badge">
+              {{ unreadCount }}
+            </span>
+          </button>
+          
+          <!-- Dropdown Panel -->
+          <div v-if="showNotifications" class="notifications-dropdown">
+            <div class="notifications-header">
+              <h3>Notifications</h3>
+              <button v-if="unreadCount > 0" @click="markAllAsRead" class="mark-all-btn">
+                Mark all as read
+              </button>
+            </div>
+            
+            <div class="notifications-list">
+              <div v-if="notifications.length === 0" class="no-notifications">
+                <p>No notifications yet</p>
+              </div>
+              <div 
+                v-else
+                v-for="notification in notifications" 
+                :key="notification.id" 
+                class="notification-item"
+                :class="{ 'unread': notification.status === 'UNREAD' }"
+                @click="markAsRead(notification)"
+              >
+                <div class="notification-dot" v-if="notification.status === 'UNREAD'"></div>
+                <div class="notification-content">
+                  <p class="notification-message">{{ notification.message }}</p>
+                  <span class="notification-time">{{ formatTime(notification.sent_at) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
         <button class="icon-button">
           <i v-html="icons.message" />
         </button>
@@ -160,9 +262,12 @@ const navigateTo = (page) => {
         <div v-if="showUserMenu" class="dropdown-menu">
           <!-- Mobile-only icons -->
           <div class="sm:hidden mobile-icons-section">
-            <button class="dropdown-item">
+            <button @click="toggleNotifications" class="dropdown-item relative">
               <i v-html="icons.notification" />
               <span>Notifications</span>
+              <span v-if="unreadCount > 0" class="unread-badge-mobile">
+                {{ unreadCount }}
+              </span>
             </button>
             <button class="dropdown-item">
               <i v-html="icons.message" />
@@ -188,8 +293,8 @@ const navigateTo = (page) => {
     </div>
 
     <!-- Overlay for closing dropdown -->
-    <div v-if="showUserMenu" 
-         @click="showUserMenu = false"
+    <div v-if="showUserMenu || showNotifications" 
+         @click="showUserMenu = false; showNotifications = false"
          class="dropdown-overlay">
     </div>
   </div>
@@ -441,4 +546,226 @@ const navigateTo = (page) => {
     width: 12rem;
   }
 }
+
+/* Unread Badges */
+.unread-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 4px;
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  border-radius: 9999px;
+  border: 1.5px solid #1e293b;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+  animation: pulse-badge 2s infinite;
+}
+
+.unread-badge-mobile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 4px;
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  border-radius: 9999px;
+  margin-left: auto;
+}
+
+@keyframes pulse-badge {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+/* Notifications Dropdown */
+.notifications-dropdown {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 0.75rem;
+  width: 20rem;
+  background: rgba(30, 41, 59, 0.95);
+  backdrop-filter: blur(12px);
+  border-radius: 1.25rem;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.5);
+  z-index: 50;
+  overflow: hidden;
+  animation: slide-in 0.2s ease-out;
+}
+
+.light .notifications-dropdown {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(203, 213, 225, 0.8);
+  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.15);
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Notifications Header */
+.notifications-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.15);
+}
+
+.light .notifications-header {
+  border-bottom: 1px solid rgba(203, 213, 225, 0.5);
+}
+
+.notifications-header h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: white;
+  margin: 0;
+}
+
+.light .notifications-header h3 {
+  color: #0f172a;
+}
+
+.mark-all-btn {
+  font-size: 0.75rem;
+  color: #f59e0b;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  transition: color 0.2s ease;
+}
+
+.mark-all-btn:hover {
+  color: #ef4444;
+  text-decoration: underline;
+}
+
+/* Notifications List */
+.notifications-list {
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.notifications-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.notifications-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.notifications-list::-webkit-scrollbar-thumb {
+  background: rgba(245, 158, 11, 0.3);
+  border-radius: 3px;
+}
+
+.notifications-list::-webkit-scrollbar-thumb:hover {
+  background: #f59e0b;
+}
+
+/* Notification Item */
+.notification-item {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.875rem 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  align-items: flex-start;
+  position: relative;
+  text-align: left;
+}
+
+.light .notification-item {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.notification-item:hover {
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.notification-item.unread {
+  background: rgba(245, 158, 11, 0.04);
+}
+
+/* Unread Indicator Dot */
+.notification-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  background: #f59e0b;
+  border-radius: 9999px;
+  flex-shrink: 0;
+  margin-top: 0.35rem;
+  box-shadow: 0 0 8px #f59e0b;
+}
+
+.notification-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex-grow: 1;
+}
+
+.notification-message {
+  font-size: 0.825rem;
+  color: #cbd5e1;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.light .notification-message {
+  color: #334155;
+}
+
+.notification-item.unread .notification-message {
+  color: white;
+  font-weight: 600;
+}
+
+.light .notification-item.unread .notification-message {
+  color: #0f172a;
+}
+
+.notification-time {
+  font-size: 0.7rem;
+  color: #64748b;
+}
+
+.light .notification-time {
+  color: #94a3b8;
+}
+
+.no-notifications {
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: #64748b;
+}
+
+.no-notifications p {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
 </style>

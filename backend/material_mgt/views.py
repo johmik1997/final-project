@@ -1,33 +1,72 @@
-import requests
-from django.db.models import Avg, Count, Q
-from django.utils.translation import gettext as _
-from uuid import UUID
-
-from rest_framework.generics import CreateAPIView
-from rest_framework.generics import DestroyAPIView
-from django.contrib.auth import update_session_auth_hash
-from rest_framework.exceptions import ValidationError
-from rest_framework.permissions import AllowAny, IsAuthenticated, SAFE_METHODS, BasePermission
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.views import APIView
-from rest_framework.viewsets import ModelViewSet
-from rest_framework.decorators import action
-from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 import os
-from django.db.models import Prefetch
-from material_mgt.models import *
-from material_mgt.serializers import *
-from material_mgt.services import generate_pdf_cover_image
-from transactions.models import Borrow, Reservation
+import requests
+from uuid import UUID
+from django.utils import timezone
+from django.db.models import Avg, Count, Prefetch, Q
+from django.utils.translation import gettext_lazy as _
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from django.http import HttpResponse
+from rest_framework import status
+from rest_framework.exceptions import ValidationError
+from rest_framework import viewsets
+from rest_framework.viewsets import ModelViewSet
+from rest_framework.permissions import BasePermission, IsAuthenticated, SAFE_METHODS
+from rest_framework.decorators import action
+from rest_framework import filters
+from django_filters.rest_framework import DjangoFilterBackend
+try:
+    from google.generativeai import configure as gemini_configure, GenerativeModel
+except Exception:
+    gemini_configure = None
+    GenerativeModel = None
+
 from user_mgt.access import (
     get_user_library,
-    has_global_material_access,
     is_super_admin,
     normalize_role,
+    has_global_material_access,
 )
-from user_mgt.permissions import *
-# Create your views here.
+from .models import (
+    PhysicalMaterial,
+    DigitalMaterial,
+    MaterialFeedback,
+    MaterialFavorite,
+    MaterialBookmark,
+    MaterialTransferRequest,
+)
+from .serializers import (
+    PhysicalMaterialSerializer,
+    DigitalMaterialSerializer,
+    MaterialFeedbackSerializer,
+    MaterialFavoriteSerializer,
+    MaterialBookmarkSerializer,
+    MaterialTransferRequestSerializer,
+)
+from transactions.models import Borrow, Reservation
+
+def _get_gemini_model(env_name: str, default: str = "gemini-1.5-flash") -> str:
+    return os.getenv(env_name, default).strip() or default
+
+def _request_gemini_text(*, model: str, prompt: str, max_output_tokens: int = 400):
+    if gemini_configure is None or GenerativeModel is None:
+        return {
+            "success": False,
+            "status": status.HTTP_503_SERVICE_UNAVAILABLE,
+            "error": "Google Generative AI SDK not installed. Install with: pip install google-generativeai",
+            "text": "",
+        }
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        return {"success": False, "status": status.HTTP_503_SERVICE_UNAVAILABLE, "error": "Gemini API key not configured.", "text": ""}
+    try:
+        gemini_configure(api_key=api_key)
+        gen_model = GenerativeModel(model_name=model)
+        response = gen_model.generate_content(prompt, generation_config={"max_output_tokens": max_output_tokens})
+        text = response.text.strip() if hasattr(response, "text") else str(response).strip()
+        return {"success": True, "status": status.HTTP_200_OK, "error": "", "text": text}
+    except Exception as e:
+        return {"success": False, "status": status.HTTP_502_BAD_GATEWAY, "error": str(e), "text": ""}
 
 
 def _parse_bool(value, default=False):
@@ -91,17 +130,36 @@ class PhysicalMaterialViewSet(ModelViewSet):
         ratings_count=Count("feedbacks"),
     ).order_by("title", "id")
     serializer_class = PhysicalMaterialSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['category', 'genre', 'language', 'department', 'condition', 'location']
+    search_fields = ['title', 'author', 'isbn', 'barcode']
+    ordering_fields = ['title', 'published_date', 'average_rating', 'ratings_count', 'id']
     # permission_classes = [IsAuthenticated, IsTechnicalStaffForWrite]
 
     def get_queryset(self):
         queryset = super().get_queryset()
+
         if has_global_material_access(self.request.user):
             return queryset
 
+        # If location is explicitly requested via query params, skip role-based filtering
+        requested_location = self.request.query_params.get('location', '').strip()
+
+        if not requested_location:
+            role = normalize_role(getattr(self.request.user, "role", None))
+            if role == "FRONTDESKSTAFF":
+                queryset = queryset.filter(location="SHELF")
+            elif role == "STACKSTAFF":
+                queryset = queryset.filter(location="STACK")
+            elif self.request.user.is_authenticated:
+                queryset = queryset.exclude(location__in=["SHELF", "STACK"])
+            # Anonymous users can browse available materials without library restriction.
+
         actor_library = get_user_library(self.request.user)
-        if not actor_library:
-            return queryset.none()
-        return queryset.filter(library=actor_library)
+        if actor_library:
+            queryset = queryset.filter(library=actor_library)
+
+        return queryset
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -149,6 +207,10 @@ class DigitalMaterialViewSet(ModelViewSet):
         ratings_count=Count("feedbacks"),
     ).order_by("title", "id")
     serializer_class = DigitalMaterialSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['category', 'genre', 'language', 'department', 'format']
+    search_fields = ['title', 'author', 'isbn']
+    ordering_fields = ['title', 'published_date', 'average_rating', 'ratings_count', 'id']
     # permission_classes = [IsAuthenticated, IsTechnicalStaffForWrite]
 
     def get_queryset(self):
@@ -391,91 +453,7 @@ class MaterialInteractionStatsAPIView(APIView):
         )
 
 
-def _get_openai_api_key():
-    return os.getenv("OPENAI_API_KEY", "").strip()
 
-
-def _get_openai_model(env_name, default="gpt-5-mini"):
-    return os.getenv(env_name, default).strip() or default
-
-
-def _extract_openai_text(payload):
-    output_text = str(payload.get("output_text", "") or "").strip()
-    if output_text:
-        return output_text
-
-    text_parts = []
-    for item in payload.get("output", []) or []:
-        for content in item.get("content", []) or []:
-            text = str(content.get("text", "") or "").strip()
-            if text:
-                text_parts.append(text)
-
-    return "\n".join(text_parts).strip()
-
-
-def _request_openai_text(*, model, prompt, max_output_tokens):
-    api_key = _get_openai_api_key()
-    if not api_key:
-        return {
-            "success": False,
-            "status": status.HTTP_503_SERVICE_UNAVAILABLE,
-            "error": "AI service is not configured.",
-            "text": "",
-        }
-
-    try:
-        response = requests.post(
-            "https://api.openai.com/v1/responses",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": model,
-                "input": prompt,
-                "max_output_tokens": max_output_tokens,
-            },
-            timeout=30,
-        )
-    except requests.RequestException:
-        return {
-            "success": False,
-            "status": status.HTTP_502_BAD_GATEWAY,
-            "error": "Failed to reach AI provider.",
-            "text": "",
-        }
-
-    if response.status_code >= 400:
-        try:
-            provider_error = response.json().get("error", {}).get("message", "")
-        except ValueError:
-            provider_error = ""
-
-        return {
-            "success": False,
-            "status": status.HTTP_502_BAD_GATEWAY,
-            "error": provider_error or "AI provider returned an error.",
-            "text": "",
-        }
-
-    try:
-        payload = response.json()
-    except ValueError:
-        return {
-            "success": False,
-            "status": status.HTTP_502_BAD_GATEWAY,
-            "error": "Invalid AI provider response.",
-            "text": "",
-        }
-
-    return {
-        "success": True,
-        "status": status.HTTP_200_OK,
-        "error": "",
-        "payload": payload,
-        "text": _extract_openai_text(payload),
-    }
 
 
 def _build_chat_prompt(prompt, history=None):
@@ -534,12 +512,12 @@ class LibraryAssistantChatAPIView(APIView):
         if not prompt:
             raise ValidationError({"prompt": _("Prompt is required.")})
 
-        model = _get_openai_model("OPENAI_CHAT_MODEL")
+        model = _get_gemini_model("GEMINI_CHAT_MODEL", default="gemini-1.5-flash")
         context_prefix = (
             f"Preferred response language: {'Amharic' if language.startswith('am') else 'English'}.\n"
             f"Library data context: {_build_library_context(request.user)}\n"
         )
-        result = _request_openai_text(
+        result = _request_gemini_text(
             model=model,
             prompt=context_prefix + _build_chat_prompt(prompt, history),
             max_output_tokens=400,
@@ -564,7 +542,7 @@ class GenerateMaterialDescriptionAPIView(APIView):
         if not title or not author:
             raise ValidationError({"detail": "Both title and author are required."})
 
-        model = _get_openai_model("OPENAI_DESCRIPTION_MODEL")
+        model = _get_gemini_model("GEMINI_DESCRIPTION_MODEL", default="gemini-2.0-flash")
 
         prompt = (
             f"Title: {title}\n"
@@ -573,7 +551,7 @@ class GenerateMaterialDescriptionAPIView(APIView):
             "Use clear, neutral language and avoid inventing specific facts."
         )
 
-        result = _request_openai_text(
+        result = _request_gemini_text(
             model=model,
             prompt=prompt,
             max_output_tokens=220,
@@ -594,3 +572,267 @@ class GenerateMaterialDescriptionAPIView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+
+class MaterialTransferRequestViewSet(viewsets.ModelViewSet):
+    queryset = MaterialTransferRequest.objects.all().select_related("material", "requested_by", "fulfilled_by").order_by("-created_at")
+    serializer_class = MaterialTransferRequestSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        serializer.save(requested_by=self.request.user)
+
+    @action(detail=True, methods=["post"], url_path="fulfill")
+    def fulfill(self, request, pk=None):
+        from django.db import transaction as db_transaction
+        
+        transfer = self.get_object()
+
+        if transfer.status != "PENDING":
+            return Response(
+                {"detail": "Only pending transfers can be fulfilled."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        with db_transaction.atomic():
+            material = PhysicalMaterial.objects.select_for_update().get(pk=transfer.material.pk)
+
+            if material.available_copies < transfer.requested_quantity:
+                return Response(
+                    {"detail": "Not enough copies available in STACK."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # 1. Decrease total_copies and available_copies from the source STACK material
+            material.total_copies = max(0, material.total_copies - transfer.requested_quantity)
+            material.available_copies = max(0, material.available_copies - transfer.requested_quantity)
+            material.save()
+
+            # 2. Look for an existing SHELF material with the same attributes in the same library
+            shelf_material = PhysicalMaterial.objects.filter(
+                title=material.title,
+                author=material.author,
+                library=material.library,
+                location="SHELF"
+            ).first()
+
+            if shelf_material:
+                shelf_material.total_copies += transfer.requested_quantity
+                shelf_material.available_copies = (shelf_material.available_copies or 0) + transfer.requested_quantity
+                shelf_material.save()
+            else:
+                shelf_material = PhysicalMaterial.objects.create(
+                    title=material.title,
+                    author=material.author,
+                    category=material.category,
+                    genre=material.genre,
+                    published_date=material.published_date,
+                    department=material.department,
+                    language=material.language,
+                    isbn=material.isbn,
+                    price=material.price,
+                    condition=material.condition,
+                    location="SHELF",
+                    total_copies=transfer.requested_quantity,
+                    available_copies=transfer.requested_quantity,
+                    can_borrow=material.can_borrow,
+                    library=material.library,
+                    created_by=request.user
+                )
+
+            # 3. Complete the transfer request
+            transfer.status = "COMPLETED"
+            transfer.fulfilled_by = request.user
+            transfer.transferred_quantity = transfer.requested_quantity
+            transfer.completed_at = timezone.now()
+            transfer.save()
+
+        return Response(
+            self.get_serializer(transfer).data
+        )
+
+    @action(detail=True, methods=["post"], url_path="cancel")
+    def cancel(self, request, pk=None):
+        transfer = self.get_object()
+        if transfer.status != "PENDING":
+            return Response({"detail": "Only pending transfers can be cancelled."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        transfer.status = "CANCELLED"
+        transfer.completed_at = timezone.now()
+        transfer.save()
+
+        return Response(self.get_serializer(transfer).data)
+
+
+import barcode
+from barcode.writer import ImageWriter
+from django.http import HttpResponse
+
+class BarcodeImageAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk, *args, **kwargs):
+        try:
+            material = PhysicalMaterial.objects.get(pk=pk)
+        except PhysicalMaterial.DoesNotExist:
+            return Response({"detail": "Material not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        if not material.barcode:
+            material.save()
+            
+        try:
+            Code128 = barcode.get_barcode_class('code128')
+            barcode_obj = Code128(material.barcode, writer=ImageWriter())
+            from io import BytesIO
+            buffer = BytesIO()
+            barcode_obj.write(buffer)
+            return HttpResponse(buffer.getvalue(), content_type="image/png")
+        except Exception as e:
+            return Response({"detail": f"Failed to generate barcode image: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+import openpyxl
+from rest_framework.parsers import MultiPartParser, FormParser
+
+class PhysicalMaterialXLSImportAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, *args, **kwargs):
+        try:
+            _get_staff_profile_or_error(request.user)
+        except ValidationError as val_err:
+            return Response(val_err.detail, status=status.HTTP_403_FORBIDDEN)
+            
+        actor_library = get_user_library(request.user)
+        if not actor_library and not is_super_admin(request.user):
+            return Response({"detail": "Your account is not assigned to a library yet."}, status=status.HTTP_400_BAD_REQUEST)
+
+        file_obj = request.FILES.get('file')
+        if not file_obj:
+            return Response({"detail": "No file uploaded."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not file_obj.name.endswith('.xlsx'):
+            return Response({"detail": "Invalid file format. Only .xlsx files are supported."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            wb = openpyxl.load_workbook(file_obj, data_only=True)
+            sheet = wb.active
+            
+            headers = {}
+            for col_idx in range(1, sheet.max_column + 1):
+                val = sheet.cell(row=1, column=col_idx).value
+                if val:
+                    headers[str(val).strip().lower()] = col_idx
+            
+            required_fields = ['title', 'author', 'category', 'genre', 'published_date', 'total_copies', 'price']
+            missing = [f for f in required_fields if f not in headers]
+            if missing:
+                return Response({
+                    "detail": f"Missing required columns: {', '.join(missing)}. File must have headers: title, author, category, genre, published_date, total_copies, price, department, language, isbn, condition, location, can_borrow."
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+            created_count = 0
+            errors = []
+            
+            for row_idx in range(2, sheet.max_row + 1):
+                title_val = sheet.cell(row=row_idx, column=headers['title']).value
+                if not title_val:
+                    continue
+                    
+                try:
+                    title = str(title_val).strip()
+                    author = str(sheet.cell(row=row_idx, column=headers['author']).value or '').strip()
+                    category = str(sheet.cell(row=row_idx, column=headers['category']).value or '').strip().upper()
+                    genre = str(sheet.cell(row=row_idx, column=headers['genre']).value or '').strip()
+                    
+                    pub_date_val = sheet.cell(row=row_idx, column=headers['published_date']).value
+                    from datetime import datetime, date
+                    if isinstance(pub_date_val, (datetime, date)):
+                        published_date = pub_date_val
+                    else:
+                        pub_date_str = str(pub_date_val).strip()
+                        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
+                            try:
+                                published_date = datetime.strptime(pub_date_str, fmt).date()
+                                break
+                            except ValueError:
+                                pass
+                        else:
+                            raise ValueError(f"Invalid date format: {pub_date_str}. Use YYYY-MM-DD.")
+                        
+                    total_copies_val = sheet.cell(row=row_idx, column=headers['total_copies']).value
+                    if total_copies_val is None:
+                        raise ValueError("total_copies is required.")
+                    total_copies = int(total_copies_val)
+                    
+                    price_val = sheet.cell(row=row_idx, column=headers['price']).value
+                    if price_val is None:
+                        raise ValueError("price is required.")
+                    from decimal import Decimal
+                    price = Decimal(str(price_val))
+                    
+                    department = str(sheet.cell(row=row_idx, column=headers.get('department', 999)).value or 'General').strip()
+                    language = str(sheet.cell(row=row_idx, column=headers.get('language', 999)).value or 'English').strip()
+                    
+                    isbn_val = sheet.cell(row=row_idx, column=headers.get('isbn', 999)).value
+                    isbn = str(isbn_val).strip() if isbn_val else None
+                    
+                    condition = str(sheet.cell(row=row_idx, column=headers.get('condition', 999)).value or 'GOOD').strip().upper()
+                    if condition not in ['NEW', 'GOOD', 'FAIR', 'DAMAGED']:
+                        condition = 'GOOD'
+                        
+                    location = str(sheet.cell(row=row_idx, column=headers.get('location', 999)).value or 'STACK').strip().upper()
+                    if location not in ['STACK', 'SHELF']:
+                        location = 'STACK'
+                        
+                    can_borrow_val = sheet.cell(row=row_idx, column=headers.get('can_borrow', 999)).value
+                    can_borrow = True
+                    if can_borrow_val is not None:
+                        can_borrow = str(can_borrow_val).strip().lower() in ['1', 'true', 'yes', 'y']
+                        
+                    library = actor_library
+                    if is_super_admin(request.user) and 'library' in headers:
+                        lib_name = str(sheet.cell(row=row_idx, column=headers['library']).value or '').strip()
+                        from backend.models import Library
+                        lib = Library.objects.filter(name__iexact=lib_name).first()
+                        if lib:
+                            library = lib
+                            
+                    if not library:
+                        raise ValueError("Library not assigned/resolved.")
+                        
+                    PhysicalMaterial.objects.create(
+                        title=title,
+                        author=author,
+                        category=category,
+                        genre=genre,
+                        published_date=published_date,
+                        total_copies=total_copies,
+                        available_copies=total_copies,
+                        price=price,
+                        department=department,
+                        language=language,
+                        isbn=isbn,
+                        condition=condition,
+                        location=location,
+                        can_borrow=can_borrow,
+                        library=library,
+                        created_by=request.user
+                    )
+                    created_count += 1
+                except Exception as row_err:
+                    errors.append(f"Row {row_idx}: {str(row_err)}")
+                    
+            return Response({
+                "success": True,
+                "created_count": created_count,
+                "failed_count": len(errors),
+                "errors": errors
+            }, status=status.HTTP_200_OK if not errors else status.HTTP_207_MULTI_STATUS)
+            
+        except Exception as e:
+            return Response({"detail": f"Failed to parse XLS file: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+

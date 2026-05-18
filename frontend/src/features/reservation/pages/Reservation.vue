@@ -404,6 +404,6 @@ function submitReservation() {
       </div>
     </div>
 
-    <ReservationHistoryTable v-if="activeView === 'history'" :rows="myReservations" :loading="listReq.pending.value" />
+    <ReservationHistoryTable v-if="activeView === 'history'" :rows="myReservations" :loading="listReq.pending.value" @refresh="refreshReservations" />
   </div>
 </template>

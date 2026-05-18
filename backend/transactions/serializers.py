@@ -3,10 +3,10 @@ from django.utils import timezone
 from decimal import Decimal
 from django.conf import settings
 from django.db import transaction
-from .models import Borrow, Reservation, Return
+from .models import Borrow, Reservation, Return, Circulation
 from .services import calculate_overdue_days, finalize_return_for_borrow
 from .services import notify_borrow_success, notify_return_success
-from user_mgt.access import get_active_library_policy, get_user_library, is_super_admin, normalize_role
+from user_mgt.access import get_active_library_policy, get_user_library, is_super_admin, normalize_role, is_staff_like
 from user_mgt.models import User
 
 class ReservationSerializer(serializers.ModelSerializer):
@@ -53,8 +53,8 @@ class ReservationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"material_id": "Material is required."})
         if not material.library_id:
             raise serializers.ValidationError({"material_id": "This material is not assigned to a library yet."})
-        if getattr(user, "library_id", None) != material.library_id and not is_super_admin(user):
-            raise serializers.ValidationError({"material_id": "You can only reserve materials from your library."})
+        # Library restriction removed: Members can reserve materials from any library
+
 
         # If copies are available, user should borrow instead
         if material.available_copies > 0:
@@ -218,8 +218,11 @@ class BorrowSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"material": "This material cannot be borrowed."})
         if not material.library_id:
             raise serializers.ValidationError({"material": "This material is not assigned to a library yet."})
-        if getattr(final_member, "library_id", None) != material.library_id:
-            raise serializers.ValidationError({"material": "Members can only borrow materials from their assigned library."})
+        # Library restriction removed: Members can borrow materials from any library
+
+        # Restrict Borrow: Allowed only for materials located in the STACK
+        if getattr(material, "location", "") != "STACK":
+            raise serializers.ValidationError({"material": "Borrow is only allowed for materials located in the STACK."})
 
         policy = get_active_library_policy(getattr(material, "library", None))
         max_active_borrows = int(getattr(policy, "max_active_borrows", 3) or 3)
@@ -238,7 +241,8 @@ class BorrowSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         request = self.context.get("request")
         user = getattr(request, "user", None)
-        if not user or normalize_role(getattr(user, "role", None)) != "STACKSTAFF":
+        role = normalize_role(getattr(user, "role", None))
+        if role != "STACKSTAFF":
             raise serializers.ValidationError("Only STACK STAFF can create borrows.")
         material = validated_data["material"]
         reservation = validated_data.get("reservation")
@@ -353,8 +357,8 @@ class ReturnSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         request = self.context.get("request")
         user = getattr(request, "user", None)
-        if not user or normalize_role(getattr(user, "role", None)) != "STACKSTAFF":
-            raise serializers.ValidationError("Only STACK STAFF can record returns.")
+        if not user or not is_staff_like(user):
+            raise serializers.ValidationError("Only library staff can record returns.")
 
         borrow = validated_data["borrow"]
         now = timezone.now()
@@ -375,3 +379,127 @@ class ReturnSerializer(serializers.ModelSerializer):
 
         transaction.on_commit(lambda: notify_return_success(borrow, return_record))
         return return_record
+
+
+class BorrowUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Borrow
+        fields = ["due_date", "status"]
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or normalize_role(getattr(user, "role", None)) not in ["STACKSTAFF", "TECHNICALSTAFF", "FRONTDESKSTAFF", "ADMIN", "SUPERADMIN"]:
+            raise serializers.ValidationError("Only staff-role users can update borrows.")
+        
+        status_val = attrs.get("status")
+        if status_val and status_val not in ["BORROWED", "OVERDUE", "RETURNED"]:
+            raise serializers.ValidationError({"status": "Invalid status."})
+            
+        return attrs
+
+
+class ReservationUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Reservation
+        fields = ["expiry_date", "status"]
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or normalize_role(getattr(user, "role", None)) not in ["STACKSTAFF", "TECHNICALSTAFF", "FRONTDESKSTAFF", "ADMIN", "SUPERADMIN"]:
+            raise serializers.ValidationError("Only staff-role users can update reservations.")
+            
+        status_val = attrs.get("status")
+        if status_val and status_val not in ["RESERVED", "EXPIRED", "CANCELLED"]:
+            raise serializers.ValidationError({"status": "Invalid status."})
+            
+        return attrs
+
+
+class CirculationSerializer(serializers.ModelSerializer):
+    member = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=True)
+    member_id = serializers.CharField(source="member.id_number", read_only=True)
+    material_title = serializers.CharField(source="material.title", read_only=True)
+    material_author = serializers.CharField(source="material.author", read_only=True)
+    member_name = serializers.CharField(source="member.first_name", read_only=True)
+    library_name = serializers.CharField(source="material.library.name", read_only=True)
+
+    class Meta:
+        model = Circulation
+        fields = [
+            "id",
+            "member",
+            "member_id",
+            "material",
+            "status",
+            "created_at",
+            "updated_at",
+            "created_by",
+            "material_title",
+            "member_name",
+            "material_author",
+            "library_name",
+        ]
+        read_only_fields = [
+            "id",
+            "created_at",
+            "updated_at",
+            "created_by",
+            "material_title",
+            "material_author",
+            "member_name",
+        ]
+
+    def validate(self, attrs):
+        material = attrs.get("material")
+        if not material:
+            raise serializers.ValidationError({"material": "Material is required."})
+        if getattr(material, "location", "") != "SHELF":
+            raise serializers.ValidationError({"material": "Circulation is only allowed for materials located on the SHELF."})
+        
+        # Do not trust cached available_copies alone; compute effective availability.
+        active_circs = Circulation.objects.filter(material=material, status="BORROWED").count()
+        effective_available = material.total_copies - active_circs
+        if effective_available <= 0:
+            raise serializers.ValidationError({"material": "No available copies to circulate."})
+        
+        # Check maximum active circulations or duplicate circulation
+        final_member = attrs.get("member")
+        user_role = normalize_role(getattr(final_member, "role", ""))
+        if user_role != "MEMBER":
+            raise serializers.ValidationError({"member": "Circulation is only for members."})
+        
+        # Prevent duplicate active circulation of same book
+        existing = Circulation.objects.filter(member=final_member, material=material, status="BORROWED").exists()
+        if existing:
+            raise serializers.ValidationError("This member already has an active circulation for this material.")
+        
+        return attrs
+
+    def create(self, validated_data):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        role = normalize_role(getattr(user, "role", None))
+        if role != normalize_role("FRONT DESK STAFF"):
+            raise serializers.ValidationError("Only FRONT DESK STAFF can create circulations.")
+        
+        material = validated_data["material"]
+        with transaction.atomic():
+            locked_material = material.__class__.objects.select_for_update().get(pk=material.pk)
+            active_circs = Circulation.objects.filter(material=locked_material, status="BORROWED").count()
+            effective_available = locked_material.total_copies - active_circs
+            if effective_available <= 0:
+                raise serializers.ValidationError({"material": "No available copies to circulate."})
+            
+            # Decrease available_copies
+            locked_material.available_copies = effective_available - 1
+            locked_material.save(update_fields=["available_copies"])
+            
+            validated_data["material"] = locked_material
+            validated_data["created_by"] = user
+            validated_data["status"] = "BORROWED"
+            
+            return super().create(validated_data)
+
+

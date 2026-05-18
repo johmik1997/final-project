@@ -17,6 +17,7 @@ import materialRoutes from './material.routes';
 import reservationRoutes from './reservation.routes';
 import borrow from "./borrow.routes";
 import returnsRoutes from './returns.routes';
+import transferRoutes from './transfer.routes';
 import paymentRoutes from './payment.routes';
 import ForgotPassword from "@/pages/login/forgotPassword.vue";
 import ResetPassword from "@/pages/login/ResetPassword.vue";
@@ -77,6 +78,7 @@ const routes = [
       ...reservationRoutes,
       ...borrow,
       ...returnsRoutes,
+      ...transferRoutes,
       ...paymentRoutes,
     ],
   },

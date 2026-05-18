@@ -112,9 +112,24 @@ class PhysicalMaterialSerializer(MaterialFeedbackStatsMixin, serializers.ModelSe
     created_by_name = serializers.CharField(source="created_by.full_name", read_only=True)
     library_name = serializers.CharField(source="library.name", read_only=True)
 
+    average_rating = serializers.SerializerMethodField(read_only=True)
+    ratings_count = serializers.SerializerMethodField(read_only=True)
+    comments_count = serializers.SerializerMethodField(read_only=True)
+    recent_feedbacks = serializers.SerializerMethodField(read_only=True)
+    my_feedback_id = serializers.SerializerMethodField(read_only=True)
+    my_rating = serializers.SerializerMethodField(read_only=True)
+    my_comment = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = PhysicalMaterial
-        fields = "__all__"
+        fields = [
+            "id", "title", "author", "category", "genre", "published_date", 
+            "department", "language", "isbn", "barcode", "total_copies", 
+            "available_copies", "price", "condition", "location", "can_borrow", 
+            "image", "library", "library_name", "created_by", "created_by_name",
+            "average_rating", "ratings_count", "comments_count", "recent_feedbacks",
+            "my_rating", "my_comment", "my_feedback_id"
+        ]
         read_only_fields = ["created_by", "created_by_name", "library_name"]
 
     def validate_image(self, value):
@@ -129,10 +144,25 @@ class DigitalMaterialSerializer(MaterialFeedbackStatsMixin, serializers.ModelSer
     file = serializers.FileField(required=True)
     cover_image_url = serializers.SerializerMethodField(read_only=True)
 
+    average_rating = serializers.SerializerMethodField(read_only=True)
+    ratings_count = serializers.SerializerMethodField(read_only=True)
+    comments_count = serializers.SerializerMethodField(read_only=True)
+    recent_feedbacks = serializers.SerializerMethodField(read_only=True)
+    my_feedback_id = serializers.SerializerMethodField(read_only=True)
+    my_rating = serializers.SerializerMethodField(read_only=True)
+    my_comment = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = DigitalMaterial
-        fields = "__all__"
-        read_only_fields = ["created_by", "created_by_name", "library_name", "format","file_size"]
+        fields = [
+            "id", "title", "author", "category", "genre", "published_date",
+            "department", "language", "isbn", "format", "file_size", "file",
+            "cover_image", "cover_generated_at", "library", "library_name",
+            "created_by", "created_by_name", "cover_image_url",
+            "average_rating", "ratings_count", "comments_count", "recent_feedbacks",
+            "my_rating", "my_comment", "my_feedback_id"
+        ]
+        read_only_fields = ["created_by", "created_by_name", "library_name", "format", "file_size"]
 
     def get_cover_image_url(self, obj):
         return _build_media_url(self.context.get("request"), getattr(obj, "cover_image", None))
@@ -337,3 +367,68 @@ class MaterialBookmarkSerializer(MaterialTargetMixinSerializer):
             "created_at",
         ]
         read_only_fields = ["id", "user_id", "user_name", "material_title", "created_at"]
+
+
+class MaterialTransferRequestSerializer(serializers.ModelSerializer):
+    material_title = serializers.CharField(source="material.title", read_only=True)
+    requested_by_name = serializers.SerializerMethodField(read_only=True)
+    fulfilled_by_name = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = MaterialTransferRequest
+        fields = [
+            "id",
+            "material",
+            "material_title",
+            "status",
+            "requested_quantity",
+            "transferred_quantity",
+            "rejection_reason",
+            "requested_by",
+            "requested_by_name",
+            "fulfilled_by",
+            "fulfilled_by_name",
+            "notes",
+            "created_at",
+            "completed_at",
+        ]
+        read_only_fields = [
+            "id",
+            "material_title",
+            "transferred_quantity",
+            "requested_by",
+            "requested_by_name",
+            "fulfilled_by",
+            "fulfilled_by_name",
+            "created_at",
+            "completed_at",
+        ]
+
+    def validate(self, attrs):
+        material = attrs.get("material")
+        requested_quantity = attrs.get("requested_quantity", 1)
+
+        if not material:
+            raise serializers.ValidationError({"material": "Material is required."})
+
+        if material.location != "STACK":
+            raise serializers.ValidationError({"material": "Transfer requests can only be made for materials located in the STACK."})
+
+        if requested_quantity <= 0:
+            raise serializers.ValidationError({"requested_quantity": "Requested quantity must be greater than zero."})
+
+        if material.available_copies < requested_quantity:
+            raise serializers.ValidationError({"requested_quantity": f"Cannot request {requested_quantity} copies. Only {material.available_copies} available in STACK."})
+
+        return attrs
+
+    def get_requested_by_name(self, obj):
+        if not obj.requested_by:
+            return None
+        return f"{obj.requested_by.first_name} {obj.requested_by.last_name}".strip() or obj.requested_by.id_number
+
+    def get_fulfilled_by_name(self, obj):
+        if not obj.fulfilled_by:
+            return None
+        return f"{obj.fulfilled_by.first_name} {obj.fulfilled_by.last_name}".strip() or obj.fulfilled_by.id_number
+

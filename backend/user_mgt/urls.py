@@ -9,6 +9,7 @@ from .views import (
     ForgotPasswordAPIView,
     LibraryViewSet,
     LibraryPolicyViewSet,
+    NotificationViewSet,
     ResetPasswordAPIView,
     UserMeAPIView,
     UserCreateAPIView,
@@ -21,6 +22,7 @@ from .views import (
 router = DefaultRouter()
 router.register("libraries", LibraryViewSet, basename="library")
 router.register("library-policies", LibraryPolicyViewSet, basename="library-policy")
+router.register("notifications", NotificationViewSet, basename="notification")
 urlpatterns = [
     path("", include(router.urls)),
     path("users/admins/", AdminUsersAPIView.as_view(), name="users-admins"),

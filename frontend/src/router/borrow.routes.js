@@ -18,4 +18,11 @@ export default [
         component: () => import('@/features/borrow/pages/AddBorrow.vue'),
         meta: { requiresAuth: true, permissions: [] }
     },
+    {
+        path: '/circulation',
+        name: 'Shelf Circulation',
+        component: () => import('@/features/borrow/pages/Circulation.vue'),
+        meta: { requiresAuth: true, roles: ['ADMIN', 'SUPER ADMIN', 'FRONT DESK STAFF'] }
+    },
 ]
+

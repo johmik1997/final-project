@@ -44,12 +44,26 @@ def process_overdue_borrows_and_notify():
     summary.scanned = overdue_qs.count()
 
     for borrow in overdue_qs:
+        overdue_days = (now.date() - borrow.due_date.date()).days
+        
+        try:
+            from user_mgt.models import Notification
+            Notification.objects.create(
+                member_id=borrow.member,
+                borrow_id=borrow,
+                message=f"Warning: Your borrow of '{borrow.material.title}' is overdue by {overdue_days} days! Please return it.",
+                status='UNREAD'
+            )
+        except Exception as e:
+            print(f"Error creating system notification for overdue: {e}")
+
         member_email = (borrow.member.email or "").strip()
         if not member_email:
             summary.skipped_missing_email += 1
+            borrow.overdue_notified_at = now
+            borrow.save(update_fields=["overdue_notified_at"])
             continue
 
-        overdue_days = (now.date() - borrow.due_date.date()).days
         member_name = (borrow.member.first_name or borrow.member.id_number).strip()
         
         try:
@@ -168,6 +182,17 @@ def finalize_return_for_borrow(borrow):
 
 
 def notify_borrow_success(borrow):
+    try:
+        from user_mgt.models import Notification
+        Notification.objects.create(
+            member_id=borrow.member,
+            borrow_id=borrow,
+            message=f"You successfully borrowed '{borrow.material.title}'. Due date: {borrow.due_date.date().isoformat()}.",
+            status='UNREAD'
+        )
+    except Exception as e:
+        print(f"Error creating system notification for borrow: {e}")
+
     member_email = (borrow.member.email or "").strip()
     if not member_email:
         return
@@ -184,6 +209,18 @@ def notify_borrow_success(borrow):
 
 
 def notify_return_success(borrow, return_record):
+    try:
+        from user_mgt.models import Notification
+        fine_str = f" Fine: ${return_record.fine_amount}." if return_record.fine_amount else ""
+        Notification.objects.create(
+            member_id=borrow.member,
+            borrow_id=borrow,
+            message=f"You successfully returned '{borrow.material.title}'.{fine_str}",
+            status='UNREAD'
+        )
+    except Exception as e:
+        print(f"Error creating system notification for return: {e}")
+
     member_email = (borrow.member.email or "").strip()
     if not member_email:
         return
@@ -197,3 +234,65 @@ def notify_return_success(borrow, return_record):
         },
         recipients=[member_email],
     )
+
+
+def notify_circulation_borrow_success(circulation):
+    # 1. System notification in database
+    try:
+        from user_mgt.models import Notification
+        Notification.objects.create(
+            member_id=circulation.member,
+            message=f"You successfully borrowed '{circulation.material.title}' from Front Desk. Location: SHELF.",
+            status='UNREAD'
+        )
+    except Exception as e:
+        print(f"Error creating system notification for circulation borrow: {e}")
+
+    # 2. Email notification
+    member_email = (circulation.member.email or "").strip()
+    if not member_email:
+        return
+    member_name = (circulation.member.first_name or circulation.member.id_number).strip()
+    try:
+        send_templated_email_background(
+            template_name="borrow_success",
+            context={
+                "member_name": member_name,
+                "material_title": circulation.material.title,
+                "due_date": "N/A (Shelf Circulation)",
+            },
+            recipients=[member_email],
+        )
+    except Exception as e:
+        print(f"Error sending email for circulation borrow: {e}")
+
+
+def notify_circulation_return_success(circulation):
+    # 1. System notification in database
+    try:
+        from user_mgt.models import Notification
+        Notification.objects.create(
+            member_id=circulation.member,
+            message=f"You successfully returned '{circulation.material.title}' to Front Desk.",
+            status='UNREAD'
+        )
+    except Exception as e:
+        print(f"Error creating system notification for circulation return: {e}")
+
+    # 2. Email notification
+    member_email = (circulation.member.email or "").strip()
+    if not member_email:
+        return
+    member_name = (circulation.member.first_name or circulation.member.id_number).strip()
+    try:
+        send_templated_email_background(
+            template_name="return_success",
+            context={
+                "member_name": member_name,
+                "material_title": circulation.material.title,
+                "fine_amount": 0,
+            },
+            recipients=[member_email],
+        )
+    except Exception as e:
+        print(f"Error sending email for circulation return: {e}")

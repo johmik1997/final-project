@@ -305,7 +305,12 @@
             </div>
           </div>
           
-          <div class="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+          <div v-if="physicalReq.pending.value || digitalReq.pending.value" class="text-center py-16">
+            <div class="inline-block animate-spin w-10 h-10 border-4 border-amber-500 border-t-transparent rounded-full mb-4"></div>
+            <p class="text-slate-500 dark:text-slate-400">Loading materials...</p>
+          </div>
+          
+          <div v-else class="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
             <div v-for="item in sortedMaterials" :key="item.id" class="group relative bg-white dark:bg-slate-800/40 rounded-xl border border-gray-200 dark:border-white/5 overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-md dark:hover:shadow-none hover:border-amber-500/30 dark:hover:border-amber-500/30">
               <!-- Featured Badge -->
               <div v-if="item.rating >= 4.8" class="absolute top-3 left-3 z-10">
@@ -317,9 +322,10 @@
               <!-- Book Cover Image -->
               <div class="relative h-48 overflow-hidden bg-gradient-to-br from-gray-100 dark:from-slate-700 to-gray-200 dark:to-slate-800">
                 <img 
-                  :src="getBookImage(item.title, item.category)" 
+                  :src="item.cover_image || getBookImage(item.title, item.category)" 
                   :alt="item.title" 
                   class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  @error="$event.target.src = getBookImage(item.title, item.category)"
                 >
                 <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent opacity-60"></div>
               </div>
@@ -342,7 +348,7 @@
                 </div>
                 
                 <!-- Description -->
-                <p class="text-slate-500 dark:text-slate-400 text-xs mt-2 line-clamp-2 transition-colors duration-300">{{ item.description.substring(0, 80) }}...</p>
+                <p class="text-slate-500 dark:text-slate-400 text-xs mt-2 line-clamp-2 transition-colors duration-300">{{ item.description?.substring(0, 80) }}...</p>
                 
                 <!-- Status Badge -->
                 <div class="mt-3">
@@ -610,6 +616,8 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import ThemeToggle from '@/components/ThemeToggle.vue';
+import { useApiRequest } from '@/composables/useApiRequest';
+import { getAllMaterials } from '@/features/material/api/materialApi';
 
 const router = useRouter();
 import referal from '@/assets/referal.jpg';
@@ -753,30 +761,72 @@ const materialCategories = [
 const selectedCategory = ref('books');
 
 // All Materials Data
-const allMaterials = ref([
-  { id: 1, title: 'Introduction to Algorithms', author: 'Thomas H. Cormen', rating: 4.8, reviews: 342, description: 'Comprehensive guide to algorithms and data structures. A must-read for computer science students.', category: 'books', type: 'physical', status: 'available', year: 2022 },
-  { id: 2, title: 'Database Systems', author: 'Abraham Silberschatz', rating: 4.7, reviews: 218, description: 'Complete coverage of database design and implementation. Industry standard reference.', category: 'books', type: 'physical', status: 'borrowed', year: 2021 },
-  { id: 3, title: 'Machine Learning Engineering', author: 'Andriy Burkov', rating: 4.9, reviews: 156, description: 'Practical guide to building production-ready ML systems.', category: 'books', type: 'digital', status: 'available', year: 2023 },
-  { id: 4, title: 'The Silent Patient', author: 'Alex Michaelides', rating: 4.9, reviews: 512, description: 'A gripping psychological thriller that keeps you guessing until the very end.', category: 'books', type: 'physical', status: 'available', year: 2019 },
-  { id: 5, title: 'Atomic Habits', author: 'James Clear', rating: 4.8, reviews: 1024, description: 'Tiny changes, remarkable results. Practical strategies for building good habits.', category: 'books', type: 'physical', status: 'available', year: 2018 },
-  { id: 6, title: 'Clean Code', author: 'Robert C. Martin', rating: 4.9, reviews: 890, description: 'Handbook of agile software craftsmanship.', category: 'books', type: 'physical', status: 'available', year: 2020 },
-  { id: 7, title: 'Design Patterns', author: 'Erich Gamma', rating: 4.8, reviews: 672, description: 'Elements of reusable object-oriented software.', category: 'books', type: 'physical', status: 'borrowed', year: 2017 },
-  { id: 8, title: 'The Pragmatic Programmer', author: 'David Thomas', rating: 4.9, reviews: 734, description: 'Your journey to mastery.', category: 'books', type: 'digital', status: 'available', year: 2019 },
-  { id: 9, title: 'National Geographic', author: 'NG Society', rating: 4.6, reviews: 89, description: 'Exploring science, nature, and culture around the world.', category: 'magazine', type: 'digital', status: 'available', year: 2024 },
-  { id: 10, title: 'IEEE Spectrum', author: 'IEEE', rating: 4.5, reviews: 67, description: 'Technology insights and innovations shaping our future.', category: 'magazine', type: 'digital', status: 'available', year: 2024 },
-  { id: 11, title: 'The Economist', author: 'Economist Group', rating: 4.7, reviews: 112, description: 'Global news, analysis, and economic insights.', category: 'magazine', type: 'physical', status: 'borrowed', year: 2024 },
-  { id: 12, title: 'Nature', author: 'Nature Publishing', rating: 4.9, reviews: 234, description: 'Leading scientific journal covering breakthrough research.', category: 'magazine', type: 'digital', status: 'available', year: 2024 },
-  { id: 13, title: 'WIRED', author: 'Conde Nast', rating: 4.5, reviews: 78, description: 'How technology is changing our world.', category: 'magazine', type: 'physical', status: 'available', year: 2024 },
-  { id: 14, title: 'Machine Learning for Ethiopian Agriculture', author: 'Dr. Bekele T.', rating: 4.8, reviews: 45, description: 'PhD Thesis - Applications of ML in crop yield prediction and agricultural optimization.', category: 'thesis', type: 'digital', status: 'available', year: 2023 },
-  { id: 15, title: 'Water Resource Management', author: 'Selam A.', rating: 4.6, reviews: 32, description: 'Masters Thesis - Sustainable water resource management strategies.', category: 'thesis', type: 'digital', status: 'available', year: 2022 },
-  { id: 16, title: 'Renewable Energy Integration', author: 'Henok D.', rating: 4.7, reviews: 28, description: 'PhD Thesis - Grid integration strategies for renewable energy.', category: 'thesis', type: 'digital', status: 'borrowed', year: 2023 },
-  { id: 17, title: 'NLP for Ethiopian Languages', author: 'Meron T.', rating: 4.9, reviews: 19, description: 'Masters Thesis - Natural language processing for Amharic and Oromo.', category: 'thesis', type: 'digital', status: 'available', year: 2024 },
-  { id: 18, title: 'Advanced Research Methods', author: 'Prof. John Creswell', rating: 4.8, reviews: 156, description: 'Comprehensive guide to academic research methodology and design.', category: 'research', type: 'physical', status: 'available', year: 2021 },
-  { id: 19, title: 'Quantitative Analysis', author: 'Dr. Sarah Johnson', rating: 4.7, reviews: 98, description: 'Statistical methods for analyzing research data.', category: 'research', type: 'physical', status: 'available', year: 2022 },
-  { id: 20, title: 'Qualitative Research Design', author: 'Dr. Robert Yin', rating: 4.9, reviews: 142, description: 'Case study and ethnographic research approaches.', category: 'research', type: 'digital', status: 'available', year: 2020 },
-  { id: 21, title: 'Academic Writing Guide', author: 'Prof. Kate Turabian', rating: 4.6, reviews: 87, description: 'Style and formatting for research papers and theses.', category: 'research', type: 'physical', status: 'borrowed', year: 2023 },
-  { id: 22, title: 'Mixed Methods Research', author: 'Dr. Michael Fetters', rating: 4.7, reviews: 64, description: 'Integrating qualitative and quantitative approaches.', category: 'research', type: 'digital', status: 'available', year: 2022 }
-]);
+const allMaterials = ref([]);
+const physicalReq = useApiRequest();
+const digitalReq = useApiRequest();
+
+function loadMaterials() {
+  physicalReq.send(
+    () => getAllMaterials({ size: 50 }, 'physical'),
+    (res) => {
+      const rowsData = res?.data?.result ?? res?.data?.results ?? res?.data?.content ?? res?.data;
+      const rows = Array.isArray(rowsData) ? rowsData : [];
+      const formattedRows = rows.map(r => ({
+        ...r,
+        id: r.id || r.uuid,
+        title: r.title || 'Untitled',
+        author: r.author || 'Unknown',
+        description: r.description || 'No description available',
+        category: String(r.category || r.genre || 'books').toLowerCase(),
+        type: 'physical',
+        reviews: Number(r.ratings_count || r.comments_count || 0),
+        rating: Number(r.average_rating || 0),
+        year: r.published_date ? new Date(r.published_date).getFullYear() : 'N/A',
+        status: Number(r.available_copies) > 0 ? 'available' : 'borrowed',
+        cover_image: r.cover_image || r.image || r.thumbnail
+      }));
+      // Only keep the unique ones just in case
+      allMaterials.value = [...allMaterials.value, ...formattedRows].reduce((acc, current) => {
+        const x = acc.find(item => item.id === current.id);
+        if (!x) {
+          return acc.concat([current]);
+        } else {
+          return acc;
+        }
+      }, []);
+    }
+  );
+
+  digitalReq.send(
+    () => getAllMaterials({ size: 50 }, 'digital'),
+    (res) => {
+      const rowsData = res?.data?.result ?? res?.data?.results ?? res?.data?.content ?? res?.data;
+      const rows = Array.isArray(rowsData) ? rowsData : [];
+      const formattedRows = rows.map(r => ({
+        ...r,
+        id: r.id || r.uuid,
+        title: r.title || 'Untitled',
+        author: r.author || 'Unknown',
+        description: r.description || 'No description available',
+        category: String(r.category || r.genre || 'books').toLowerCase(),
+        type: 'digital',
+        reviews: Number(r.ratings_count || r.comments_count || 0),
+        rating: Number(r.average_rating || 0),
+        year: r.published_date ? new Date(r.published_date).getFullYear() : 'N/A',
+        status: 'available',
+        cover_image: r.cover_image || r.image || r.thumbnail
+      }));
+      allMaterials.value = [...allMaterials.value, ...formattedRows].reduce((acc, current) => {
+        const x = acc.find(item => item.id === current.id);
+        if (!x) {
+          return acc.concat([current]);
+        } else {
+          return acc;
+        }
+      }, []);
+    }
+  );
+}
 
 const filteredMaterials = computed(() => {
   let filtered = allMaterials.value.filter(m => m.category === selectedCategory.value);
@@ -784,7 +834,9 @@ const filteredMaterials = computed(() => {
     const query = searchQuery.value.toLowerCase();
     filtered = filtered.filter(m => 
       m.title.toLowerCase().includes(query) || 
-      m.author.toLowerCase().includes(query)
+      m.author.toLowerCase().includes(query) ||
+      String(m.isbn || '').toLowerCase().includes(query) ||
+      String(m.barcode || '').toLowerCase().includes(query)
     );
   }
   return filtered;
@@ -886,6 +938,7 @@ function scrollTo(sectionId) {
 }
 
 onMounted(() => {
+  loadMaterials();
   slideshowInterval = setInterval(() => {
     currentSlide.value = (currentSlide.value + 1) % heroSlides.value.length;
   }, 5000);

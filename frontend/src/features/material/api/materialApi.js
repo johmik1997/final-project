@@ -82,6 +82,10 @@ export function updateMaterialFeedback(id, payload = {}) {
   return api.addAuthenticationHeader().patch(`/material/feedback/${id}/`, payload);
 }
 
+export function deleteMaterialFeedback(id) {
+  return api.addAuthenticationHeader().delete(`/material/feedback/${id}/`);
+}
+
 export function getMaterialFavorites(query = {}) {
   const qr = getQueryFormObject(query || {});
   return api.addAuthenticationHeader().get(`/material/favorites/${qr}`);

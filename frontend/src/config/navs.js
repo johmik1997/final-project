@@ -15,7 +15,7 @@ export default [
     icon: icons.books,
     meta: { requiresAuth: true, permissions: [] },
     type: "Management",
-    roles: ["MEMBER", "ADMIN","STACK STAFF", "SUPER ADMIN","TECHNICAL STAFF"],
+    roles: ["MEMBER", "ADMIN", "STACK STAFF", "SUPER ADMIN", "TECHNICAL STAFF", "FRONT DESK STAFF"],
   },
   {
     path: "/saved-materials",
@@ -23,7 +23,15 @@ export default [
     icon: icons.library,
     meta: { requiresAuth: true, permissions: [] },
     type: "Management",
-    roles: ["MEMBER", "ADMIN", "STACK STAFF", "SUPER ADMIN", "TECHNICAL STAFF", "FRONT DESK STAFF"],
+    roles: ["MEMBER"],
+  },
+  {
+    path: "/circulation",
+    name: "Shelf Circulation",
+    icon: icons.borrow,
+    meta: { requiresAuth: true, permissions: [] },
+    type: "Management",
+    roles: ["ADMIN", "SUPER ADMIN", "FRONT DESK STAFF"],
   },
   {
     path: "/borrows",
@@ -64,6 +72,14 @@ export default [
     meta: { requiresAuth: true, permissions: [] },
     type: "Management",
     roles: ["MEMBER"],
+  },
+  {
+    path: "/transfer-requests",
+    name: "Transfer Requests",
+    icon: icons.transfer,
+    meta: { requiresAuth: true, permissions: [] },
+    type: "Management",
+    roles: ["ADMIN", "SUPER ADMIN", "STACK STAFF", "FRONT DESK STAFF"],
   },
   {
     path: "/library",

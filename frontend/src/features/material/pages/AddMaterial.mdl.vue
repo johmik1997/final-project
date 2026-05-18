@@ -28,6 +28,19 @@ const modalTitle = computed(() => isDigital.value ? 'Add New Digital Material' :
 const actionLabel = computed(() => isDigital.value ? 'Add Digital Material' : 'Add Physical Material');
 const libraryOptions = computed(() => libraryReq.response.value?.libraries || libraryReq.response.value || []);
 
+const userLibraryId = computed(() => {
+  const stored = JSON.parse(localStorage.getItem('userDetail') || '{}');
+  const user = stored?.user || stored || {};
+  return user?.library_id || user?.libraryId || '';
+});
+
+const isSuperAdmin = computed(() => {
+  const stored = JSON.parse(localStorage.getItem('userDetail') || '{}');
+  const user = stored?.user || stored || {};
+  const role = String(user?.roleName || user?.role || user?.userRole || '').toUpperCase().replace(/\s+/g, '');
+  return role === 'SUPERADMIN';
+});
+
 const steps = computed(() => {
   const baseSteps = [
     { number: 1, title: 'Basic Information', icon: '📚' },
@@ -264,7 +277,8 @@ function validateAndNext() {
                   label: library?.name,
                   value: library?.id,
                 }))"
-                :attributes="{ placeholder: 'Select Library' }"
+                :value="userLibraryId"
+                :attributes="{ placeholder: 'Select Library', disabled: !isSuperAdmin ? 'disabled' : undefined }"
               />
             </div>
           </div>

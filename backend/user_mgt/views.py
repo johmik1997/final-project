@@ -11,7 +11,7 @@ from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from django.db.models import Q
 
 from .access import get_user_library, is_admin_like, is_super_admin, normalize_role
-from .models import Library, User
+from .models import Library, User, LibraryPolicy, Notification
 from .permissions import CanCreateUsers, CanDeleteUsers, IsSuperAdminForWrite
 from .serializers import (
     AdminUserListSerializer,
@@ -26,8 +26,8 @@ from .serializers import (
     UserCreateSerializer,
     UserUpdateSerializer,
     CustomTokenObtainPairSerializer,
+    NotificationSerializer,
 )
-from .models import LibraryPolicy
 
 from rest_framework_simplejwt.views import TokenObtainPairView
 
@@ -367,3 +367,21 @@ class UserMeAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+from rest_framework.decorators import action
+
+class NotificationViewSet(ModelViewSet):
+    serializer_class = NotificationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        return Notification.objects.filter(member_id=user).order_by('-sent_at')
+
+    @action(detail=True, methods=['post'])
+    def mark_read(self, request, pk=None):
+        notification = self.get_object()
+        notification.status = 'READ'
+        notification.save()
+        return Response({'status': 'notification marked as read'})

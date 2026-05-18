@@ -116,6 +116,8 @@ class Notification(models.Model):
     ) 
     borrow_id = models.ForeignKey(
         "transactions.Borrow",
+        null=True,
+        blank=True,
         on_delete=models.CASCADE,
         related_name='notification'
     ) 

@@ -29,7 +29,12 @@
             </button>
           </div>
 
-          <button @click="openCreateModal" class="btn-primary">
+          <button v-if="activeType === 'physical' && canManageMaterial" @click="openImportModal" class="btn-secondary mr-2">
+            <BaseIcon :path="mdiUpload" size="18" />
+            <span>Import XLS</span>
+          </button>
+
+          <button v-if="canManageMaterial" @click="openCreateModal" class="btn-primary">
             <span>{{ addButtonLabel }}</span>
           </button>
         </div>
@@ -301,6 +306,62 @@
         </div>
       </div>
     </div>
+    <!-- XLS Import Modal -->
+    <div v-if="showImportModal" class="import-modal-overlay" @click.self="closeImportModal">
+      <div class="import-modal-card">
+        <header class="import-modal-header">
+          <h3>Import Physical Materials from Excel</h3>
+          <button @click="closeImportModal" class="modal-close-btn">
+            <BaseIcon :path="mdiClose" size="18" />
+          </button>
+        </header>
+        
+        <div class="import-modal-body">
+          <p class="import-instructions">
+            Upload an Excel sheet (.xlsx) containing physical materials. The sheet <strong>must</strong> include these column headers:
+            <span class="headers-list">title, author, category, genre, published_date, total_copies, price</span>.
+          </p>
+          
+          <div class="file-dropzone" :class="{ 'dropzone-active': isDragging }" @dragover.prevent="isDragging = true" @dragleave.prevent="isDragging = false" @drop.prevent="handleFileDrop">
+            <input type="file" ref="fileInput" accept=".xlsx" class="hidden-file-input" @change="handleFileSelect" />
+            <div class="dropzone-content" @click="$refs.fileInput?.click()">
+              <BaseIcon :path="mdiUpload" size="36" class="upload-icon" />
+              <p v-if="!selectedFile">Drag & drop your Excel file here or <span class="browse-link">browse</span></p>
+              <p v-else class="selected-file-name">{{ selectedFile.name }}</p>
+            </div>
+          </div>
+          
+          <!-- Loading State -->
+          <div v-if="importing" class="loading-state">
+            <div class="spinner"></div>
+            <p>Processing import request, please wait...</p>
+          </div>
+          
+          <!-- Results Display -->
+          <div v-if="importResults" class="import-results-panel">
+            <div class="results-summary" :class="importResults.failed_count > 0 ? 'summary-warning' : 'summary-success'">
+              <p><strong>Status:</strong> {{ importResults.failed_count > 0 ? 'Completed with errors' : 'Successfully Imported!' }}</p>
+              <p>Created: <strong>{{ importResults.created_count }}</strong> materials</p>
+              <p>Failed: <strong>{{ importResults.failed_count }}</strong> rows</p>
+            </div>
+            
+            <div v-if="importResults.errors && importResults.errors.length" class="errors-log mt-3">
+              <h4>Error details:</h4>
+              <ul class="errors-list">
+                <li v-for="(err, idx) in importResults.errors" :key="idx">{{ err }}</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        
+        <footer class="import-modal-footer">
+          <button @click="closeImportModal" class="btn-cancel" :disabled="importing">Close</button>
+          <button @click="submitImport" class="btn-primary" :disabled="!selectedFile || importing">
+            <span>{{ importing ? 'Importing...' : 'Upload & Import' }}</span>
+          </button>
+        </footer>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -314,6 +375,7 @@ import { getAllMaterials, removeMaterialById } from '../api/materialApi'
 import { normalizeRoleValue } from '@/utils/authNavigation'
 import { toasted } from '@/utils/utils'
 import { openModal } from '@customizer/modal-x'
+import ApiService from '@/service/ApiService'
 import BaseIcon from '@/components/base/BaseIcon.vue'
 import { 
   mdiPencil, 
@@ -327,7 +389,8 @@ import {
   mdiCheckCircle,
   mdiClockOutline,
   mdiViewDashboard,
-  mdiFormatListBulleted
+  mdiFormatListBulleted,
+  mdiUpload
 } from '@mdi/js'
 import { usePaginations } from '@/composables/usePaginationTemp'
 import defaultCover from '@/assets/default-coverpage.png'
@@ -341,9 +404,98 @@ const searchQuery = ref('')
 const selectedCategory = ref('')
 const selectedCondition = ref('')
 
+const showImportModal = ref(false)
+const selectedFile = ref(null)
+const isDragging = ref(false)
+const importing = ref(false)
+const importResults = ref(null)
+const fileInput = ref(null)
+
+function openImportModal() {
+  showImportModal.value = true
+  selectedFile.value = null
+  importResults.value = null
+  isDragging.value = false
+  importing.value = false
+}
+
+function closeImportModal() {
+  if (importing.value) return
+  showImportModal.value = false
+}
+
+function handleFileSelect(e) {
+  const file = e.target.files[0]
+  if (file) {
+    if (!file.name.endsWith('.xlsx')) {
+      toasted(false, 'Only Excel (.xlsx) files are supported')
+      return
+    }
+    selectedFile.value = file
+  }
+}
+
+function handleFileDrop(e) {
+  isDragging.value = false
+  const file = e.dataTransfer.files[0]
+  if (file) {
+    if (!file.name.endsWith('.xlsx')) {
+      toasted(false, 'Only Excel (.xlsx) files are supported')
+      return
+    }
+    selectedFile.value = file
+  }
+}
+
+async function submitImport() {
+  if (!selectedFile.value) return
+  importing.value = true
+  importResults.value = null
+  
+  const formData = new FormData()
+  formData.append('file', selectedFile.value)
+  
+  try {
+    const apiService = new ApiService()
+    const res = await apiService.addAuthenticationHeader().post('/material/physical-materials/import-xls/', formData)
+    
+    const responseData = res?.data || res
+    
+    // In Vue, standard api responses are wrapped. Let's make sure we check the actual count values returned by django view.
+    if (res?.success || responseData?.success || responseData?.created_count !== undefined) {
+      importResults.value = responseData
+      toasted(true, `Successfully imported ${responseData.created_count} physical materials`)
+      pagination.refresh()
+    } else {
+      toasted(false, 'Failed to import materials', res?.error || responseData?.detail || 'Validation error')
+    }
+  } catch (err) {
+    const apiError = err?.response?.data || {};
+    if (apiError.created_count !== undefined) {
+      importResults.value = apiError
+      toasted(false, `Import partially failed: ${apiError.failed_count} errors`)
+      pagination.refresh()
+    } else {
+      toasted(false, 'An unexpected error occurred during import')
+    }
+  } finally {
+    importing.value = false
+  }
+}
+
 const pagination = usePaginations({
   store: materialStore,
-  cb: (query) => getAllMaterials(query, activeType.value),
+  cb: (query) => {
+    const enrichedQuery = { ...query }
+    if (activeType.value === 'physical') {
+      if (userRole.value === 'FRONT DESK STAFF') {
+        enrichedQuery.location = 'SHELF'
+      } else if (userRole.value === 'STACK STAFF') {
+        enrichedQuery.location = 'STACK'
+      }
+    }
+    return getAllMaterials(enrichedQuery, activeType.value)
+  },
 })
 
 const removeReq = useApiRequest()
@@ -353,6 +505,12 @@ const addButtonLabel = computed(() =>
   activeType.value === 'digital' ? 'Add Digital Material' : 'Add Physical Material'
 )
 
+const userRole = computed(() => {
+  const stored = JSON.parse(localStorage.getItem('userDetail') || '{}')
+  const user = stored?.user || stored || {}
+  return normalizeRoleValue(user?.roleName || user?.role || user?.userRole)
+})
+
 const typeFilteredRows = computed(() => {
   return (materialStore.materials || []).filter((row) => {
     const rowType = String(row?.material_type || row?.materialType || row?.type || '')
@@ -361,9 +519,22 @@ const typeFilteredRows = computed(() => {
       .trim()
 
     if (!rowType) return true
-    return activeType.value === 'digital'
+    const matchType = activeType.value === 'digital'
       ? rowType.includes('digital')
       : rowType.includes('physical')
+
+    if (!matchType) return false
+
+    if (activeType.value === 'physical') {
+      const loc = String(row?.location || '').toUpperCase().trim()
+      if (loc === 'SHELF') {
+        return userRole.value === 'FRONT DESK STAFF'
+      }
+      if (loc === 'STACK') {
+        return userRole.value === 'STACK STAFF'
+      }
+    }
+    return true
   })
 })
 
@@ -412,13 +583,7 @@ const headerStats = computed(() => {
 
 const isDigital = computed(() => activeType.value === 'digital')
 
-const userRole = computed(() => {
-  const stored = JSON.parse(localStorage.getItem('userDetail') || '{}')
-  const user = stored?.user || stored || {}
-  return normalizeRoleValue(user?.roleName || user?.role || user?.userRole)
-})
-
-const canManageMaterial = computed(() => !['MEMBER', 'STACK STAFF'].includes(userRole.value))
+const canManageMaterial = computed(() => !['MEMBER', 'STACK STAFF', 'FRONT DESK STAFF'].includes(userRole.value))
 
 watch(activeType, () => {
   materialStore.setCreateType(activeType.value)
@@ -1401,5 +1566,324 @@ function remove(id) {
   border: 1px dashed rgba(51, 65, 85, 0.5);
   background: rgba(245, 158, 11, 0.02);
   color: #94a3b8;
+}
+
+/* Button & Modal Styles */
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #d97706;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  transform: translateY(-2px);
+  background: white;
+  border-color: #f59e0b;
+  box-shadow: 0 10px 20px -5px rgba(245, 158, 11, 0.2);
+}
+
+.dark .btn-secondary {
+  background: rgba(30, 41, 59, 0.8);
+  border-color: rgba(251, 191, 36, 0.4);
+  color: #fbbf24;
+}
+
+.dark .btn-secondary:hover {
+  background: #1e293b;
+  border-color: #fbbf24;
+}
+
+.import-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.import-modal-card {
+  background: white;
+  border-radius: 1.5rem;
+  width: 90%;
+  max-width: 550px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  display: flex;
+  flex-direction: column;
+  max-height: 85vh;
+  overflow: hidden;
+  animation: slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.dark .import-modal-card {
+  background: #1e293b;
+  border-color: rgba(51, 65, 85, 0.8);
+  color: #f1f5f9;
+}
+
+.import-modal-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dark .import-modal-header {
+  border-color: #334155;
+}
+
+.import-modal-header h3 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.dark .import-modal-header h3 {
+  color: #f1f5f9;
+}
+
+.modal-close-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 9999px;
+  transition: all 0.2s;
+}
+
+.modal-close-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #0f172a;
+}
+
+.dark .modal-close-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
+}
+
+.import-modal-body {
+  padding: 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.import-instructions {
+  font-size: 0.875rem;
+  color: #475569;
+  line-height: 1.4;
+  margin-bottom: 1.25rem;
+}
+
+.dark .import-instructions {
+  color: #94a3b8;
+}
+
+.headers-list {
+  display: block;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: #f1f5f9;
+  border-radius: 0.5rem;
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: #d97706;
+}
+
+.dark .headers-list {
+  background: #0f172a;
+  color: #fbbf24;
+}
+
+.file-dropzone {
+  border: 2px dashed #cbd5e1;
+  border-radius: 1rem;
+  padding: 2rem 1.5rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: #f8fafc;
+}
+
+.dark .file-dropzone {
+  border-color: #475569;
+  background: #0f172a;
+}
+
+.file-dropzone:hover, .dropzone-active {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.03);
+}
+
+.hidden-file-input {
+  display: none;
+}
+
+.dropzone-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.upload-icon {
+  color: #f59e0b;
+}
+
+.browse-link {
+  color: #ef4444;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.selected-file-name {
+  font-weight: 600;
+  color: #10b981;
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.spinner {
+  width: 2rem;
+  height: 2rem;
+  border: 3px solid rgba(245, 158, 11, 0.1);
+  border-radius: 50%;
+  border-top-color: #f59e0b;
+  animation: spin 1s linear infinite;
+}
+
+.import-results-panel {
+  margin-top: 1.25rem;
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.results-summary {
+  padding: 1rem;
+  font-size: 0.875rem;
+}
+
+.summary-success {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.summary-warning {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.errors-log {
+  max-height: 120px;
+  overflow-y: auto;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  background: #fafafa;
+}
+
+.dark .errors-log {
+  background: #0f172a;
+  border-color: #334155;
+}
+
+.errors-log h4 {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #e11d48;
+  margin-bottom: 0.25rem;
+}
+
+.errors-list {
+  list-style: none;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: #64748b;
+  padding: 0;
+  margin: 0;
+}
+
+.dark .errors-list {
+  color: #94a3b8;
+}
+
+.errors-list li {
+  margin-bottom: 0.25rem;
+}
+
+.import-modal-footer {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.dark .import-modal-footer {
+  border-color: #334155;
+}
+
+.btn-cancel {
+  padding: 0.5rem 1.25rem;
+  border-radius: 9999px;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-cancel:hover {
+  background: #e2e8f0;
+}
+
+.dark .btn-cancel {
+  background: #334155;
+  border-color: #475569;
+  color: #f1f5f9;
+}
+
+.dark .btn-cancel:hover {
+  background: #475569;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 </style>

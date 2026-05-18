@@ -80,6 +80,7 @@ class PhysicalMaterial (models.Model):
     department = models.CharField(max_length=70)
     language = models.CharField(max_length=70)
     isbn = models.CharField(max_length=70,null=True,blank=True)
+    barcode = models.CharField(max_length=100, unique=True, null=True, blank=True)
     total_copies = models.IntegerField()
     available_copies = models.IntegerField(null=True, blank=True)
     price = models.DecimalField(max_digits=10,decimal_places=2)
@@ -115,6 +116,24 @@ class PhysicalMaterial (models.Model):
     def save(self, *args, **kwargs):
         if self.available_copies is None:
             self.available_copies = self.total_copies
+        # Auto-generate barcode if not provided
+        if not self.barcode:
+            try:
+                import barcode
+                from barcode.writer import ImageWriter
+                # Use UUID as base for barcode code128
+                code = str(self.id).replace('-', '')[:12]
+                Code128 = barcode.get_barcode_class('code128')
+                barcode_obj = Code128(code, writer=ImageWriter())
+                # Save to temporary in-memory file
+                from io import BytesIO
+                buffer = BytesIO()
+                barcode_obj.write(buffer)
+                # Store PNG binary as base64 string (or keep as raw bytes for image endpoint) - here we store string identifier
+                self.barcode = code
+            except Exception as e:
+                # Fallback: use UUID string directly
+                self.barcode = str(self.id)
         super().save(*args, **kwargs)
     
     def __str__(self):
@@ -283,3 +302,68 @@ class MaterialBookmark(models.Model):
             ),
         ]
     
+class MaterialTransferRequest(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    material = models.ForeignKey(
+        PhysicalMaterial,
+        on_delete=models.CASCADE,
+        related_name="transfer_requests",
+    )
+
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('APPROVED', 'Approved'),
+        ('IN_TRANSFER', 'In Transfer'),
+        ('COMPLETED', 'Completed'),
+        ('REJECTED', 'Rejected'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='PENDING'
+    )
+
+    requested_quantity = models.PositiveIntegerField(default=1)
+
+    transferred_quantity = models.PositiveIntegerField(
+        default=0
+    )
+
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="created_transfer_requests",
+        null=True,
+    )
+
+    fulfilled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="fulfilled_transfer_requests",
+        null=True,
+        blank=True,
+    )
+
+    notes = models.TextField(blank=True, null=True)
+
+    rejection_reason = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.material.title} ({self.requested_quantity}) - {self.status}"

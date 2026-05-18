@@ -96,10 +96,16 @@ const availabilityPercentage = computed(() => {
         {{ material.title || 'Untitled' }}
       </h5>
       
-      <p class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1 mb-2">
-        <BaseIcon :path="mdiAccount" size="10" class="text-gray-400 dark:text-gray-600" />
-        {{ material.author || 'Unknown Author' }}
-      </p>
+      <div class="flex justify-between items-center mb-2">
+        <p class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+          <BaseIcon :path="mdiAccount" size="10" class="text-gray-400 dark:text-gray-600" />
+          {{ material.author || 'Unknown Author' }}
+        </p>
+        <div class="flex items-center text-amber-500 text-xs font-medium" v-if="material.average_rating || material.rating">
+          <BaseIcon :path="mdiStar" size="12" />
+          <span class="ml-0.5">{{ Number(material.average_rating || material.rating || 0).toFixed(1) }}</span>
+        </div>
+      </div>
 
       <!-- Additional Info for List View -->
       <div v-if="viewMode === 'list'" class="flex items-center gap-3 mt-1 text-xs">

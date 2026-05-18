@@ -8,6 +8,7 @@ import { getAllReturns } from '@/features/returns/api/returnApi';
 import { initializeFinePayment, verifyFinePayment } from '../api/paymentApi';
 import { emitEntityMutation, subscribeEntityMutation } from '@/utils/entitySync';
 import { secondDateFormatWithTime, toasted } from '@/utils/utils';
+import { generatePaymentReceipt } from '../utils/receiptGenerator';
 import {
   mdiCashFast,
   mdiRefresh,
@@ -197,6 +198,23 @@ onMounted(() => {
   });
 });
 
+function downloadReceipt(row) {
+  const payment = {
+    payment_intent_id: row?.payment_reference || row?.id || 'N/A',
+    payment_date: row?.return_date || new Date().toISOString(),
+    payment_method: 'Chapa Pay',
+    amount: amount(row?.fine_amount),
+    material_title: row?.material_title || row?.material || 'Library Fine Payment',
+    fee_type: 'Overdue Fine',
+    member_name: row?.member_name || row?.member || 'Library Patron',
+    member_id_number: row?.member_id_number || 'N/A',
+    library_name: row?.library_name || 'E-Book Library System'
+  };
+  
+  toasted(true, 'Generating PDF receipt...');
+  generatePaymentReceipt(payment);
+}
+
 onBeforeUnmount(() => {
   unsubscribeEntitySync?.();
 });
@@ -357,6 +375,18 @@ onBeforeUnmount(() => {
               <span>Reference</span>
               <span class="font-medium text-slate-800 dark:text-slate-300 font-mono text-xs">{{ row?.payment_reference || '-' }}</span>
             </div>
+          </div>
+
+          <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+            <button
+              @click="downloadReceipt(row)"
+              class="inline-flex items-center gap-1.5 text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-600 hover:text-white px-3 py-1.5 rounded-xl transition-all duration-200"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path>
+              </svg>
+              <span>Download Receipt</span>
+            </button>
           </div>
         </article>
 
