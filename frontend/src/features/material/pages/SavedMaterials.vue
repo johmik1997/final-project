@@ -43,16 +43,8 @@ const visibleRows = computed(() =>
 );
 
 const statCards = computed(() => [
-  {
-    label: 'Favorite Materials',
-    value: favoriteRows.value.length,
-    icon: mdiHeart,
-  },
-  {
-    label: 'Bookmark Collection',
-    value: bookmarkRows.value.length,
-    icon: mdiBookmark,
-  },
+  { label: 'Favorite Materials', value: favoriteRows.value.length, icon: mdiHeart, tone: 'favorite' },
+  { label: 'Bookmark Collection', value: bookmarkRows.value.length, icon: mdiBookmark, tone: 'bookmark' },
 ]);
 
 function loadSavedMaterials() {
@@ -63,7 +55,6 @@ function loadSavedMaterials() {
 function openMaterial(row) {
   const materialId = row?.material?.id || row?.material_id;
   if (!materialId) return;
-
   router.push({
     path: `/material/${materialId}`,
     query: { type: row?.material_type || 'physical' },
@@ -81,32 +72,20 @@ function removeSavedItem(row) {
       toasted(false, '', res?.error || 'Failed to remove saved material');
       return;
     }
-
-    toasted(
-      true,
-      isFavoritesTab ? 'Removed from favorites' : 'Removed from bookmarks'
-    );
+    toasted(true, isFavoritesTab ? 'Removed from favorites' : 'Removed from bookmarks');
     loadSavedMaterials();
   });
 }
 
 function getMaterialMeta(row) {
   const material = row?.material || {};
-
-  if (row?.material_type === 'digital') {
-    return material?.format || 'Digital';
-  }
-
+  if (row?.material_type === 'digital') return material?.format || 'Digital';
   return material?.condition || 'Physical';
 }
 
 function getSecondaryMeta(row) {
   const material = row?.material || {};
-
-  if (row?.material_type === 'digital') {
-    return material?.file_size || material?.language || '-';
-  }
-
+  if (row?.material_type === 'digital') return material?.file_size || material?.language || '-';
   const available = Number(material?.available_copies ?? 0);
   const total = Number(material?.total_copies ?? 0);
   return `${available}/${total}`;
@@ -128,12 +107,17 @@ loadSavedMaterials();
     </section>
 
     <section class="stats-grid">
-      <article v-for="card in statCards" :key="card.label" class="stat-card">
+      <article
+        v-for="card in statCards"
+        :key="card.label"
+        class="stat-card"
+        :class="`stat-card-${card.tone}`"
+      >
         <div>
           <p class="stat-label">{{ card.label }}</p>
           <p class="stat-value">{{ card.value }}</p>
         </div>
-        <div class="stat-icon">
+        <div class="stat-icon" :class="`stat-icon-${card.tone}`">
           <BaseIcon :path="card.icon" size="24" />
         </div>
       </article>
@@ -145,6 +129,7 @@ loadSavedMaterials();
         :class="{ active: activeTab === 'favorites' }"
         @click="activeTab = 'favorites'"
       >
+        <BaseIcon :path="mdiHeart" size="18" />
         Favorite Materials
       </button>
       <button
@@ -152,34 +137,35 @@ loadSavedMaterials();
         :class="{ active: activeTab === 'bookmarks' }"
         @click="activeTab = 'bookmarks'"
       >
+        <BaseIcon :path="mdiBookmark" size="18" />
         Bookmark Collection
       </button>
     </section>
 
-    <section class="section-copy">
-      <template v-if="activeTab === 'favorites'">
-        <h2>Materials you marked to revisit quickly</h2>
-      </template>
-      <template v-else>
-        <h2>Reading list saved for later</h2>
-      </template>
-    </section>
-
     <section v-if="favoritesReq.pending.value || bookmarksReq.pending.value" class="loading-state">
-      <div class="loading-spinner"></div>
+      <div class="loading-spinner" />
       <p>Loading saved materials...</p>
     </section>
 
     <section v-else-if="visibleRows.length" class="saved-grid">
-      <article v-for="row in visibleRows" :key="row.id" class="saved-card">
+      <article
+        v-for="row in visibleRows"
+        :key="row.id"
+        class="saved-card"
+        :class="activeTab === 'favorites' ? 'saved-card-favorite' : 'saved-card-bookmark'"
+      >
         <div class="saved-cover">
           <img :src="defaultCover" :alt="row?.material?.title || row?.material_title || 'Material cover'" />
           <span class="saved-type">{{ row?.material_type || 'material' }}</span>
+          <span class="saved-badge" :class="activeTab === 'favorites' ? 'badge-favorite' : 'badge-bookmark'">
+            <BaseIcon :path="activeTab === 'favorites' ? mdiHeart : mdiBookmark" size="18" />
+            {{ activeTab === 'favorites' ? 'Favorited' : 'Bookmarked' }}
+          </span>
         </div>
 
         <div class="saved-content">
           <p class="saved-library">{{ row?.material?.library_name || 'Library collection' }}</p>
-          <button class="saved-title" @click="openMaterial(row)">
+          <button type="button" class="saved-title" @click="openMaterial(row)">
             {{ row?.material?.title || row?.material_title || 'Untitled' }}
           </button>
           <p class="saved-author">{{ row?.material?.author || '-' }}</p>
@@ -193,11 +179,16 @@ loadSavedMaterials();
           <p class="saved-date">Saved on {{ secondDateFormat(row?.created_at) }}</p>
 
           <div class="saved-actions">
-            <button class="primary-action" @click="openMaterial(row)">
+            <button type="button" class="primary-action" @click="openMaterial(row)">
               <BaseIcon :path="mdiOpenInNew" size="16" />
               View details
             </button>
-            <button class="secondary-action" :disabled="actionReq.pending.value" @click="removeSavedItem(row)">
+            <button
+              type="button"
+              class="secondary-action"
+              :disabled="actionReq.pending.value"
+              @click="removeSavedItem(row)"
+            >
               <BaseIcon :path="mdiDeleteOutline" size="16" />
               {{ activeTab === 'favorites' ? 'Remove from favorites' : 'Remove from bookmarks' }}
             </button>
@@ -207,7 +198,9 @@ loadSavedMaterials();
     </section>
 
     <section v-else class="empty-state">
-      <BaseIcon :path="activeTab === 'favorites' ? mdiHeart : mdiBookmark" size="36" />
+      <div class="empty-icon" :class="activeTab === 'favorites' ? 'empty-icon-favorite' : 'empty-icon-bookmark'">
+        <BaseIcon :path="activeTab === 'favorites' ? mdiHeart : mdiBookmark" size="36" />
+      </div>
       <h3>{{ activeTab === 'favorites' ? 'No favorite materials yet' : 'No bookmarked materials yet' }}</h3>
       <p>
         {{
@@ -216,7 +209,7 @@ loadSavedMaterials();
             : 'Materials you bookmark for later will appear here'
         }}
       </p>
-      <button class="browse-action" @click="router.push('/material')">
+      <button type="button" class="browse-action" @click="router.push('/material')">
         <BaseIcon :path="mdiBookOpenVariant" size="18" />
         Open material
         <BaseIcon :path="mdiChevronRight" size="18" />
@@ -283,6 +276,7 @@ loadSavedMaterials();
   background: linear-gradient(135deg, #f59e0b, #ea580c);
   color: white;
   box-shadow: 0 14px 28px rgba(245, 158, 11, 0.28);
+  flex-shrink: 0;
 }
 
 .stats-grid {
@@ -300,6 +294,14 @@ loadSavedMaterials();
   border-radius: 1.25rem;
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.stat-card-favorite {
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.stat-card-bookmark {
+  border-color: rgba(16, 185, 129, 0.25);
 }
 
 .dark .stat-card {
@@ -330,8 +332,16 @@ loadSavedMaterials();
   width: 3rem;
   height: 3rem;
   border-radius: 1rem;
-  color: #ea580c;
-  background: rgba(245, 158, 11, 0.12);
+}
+
+.stat-icon-favorite {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.stat-icon-bookmark {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.12);
 }
 
 .tab-panel {
@@ -350,6 +360,9 @@ loadSavedMaterials();
 }
 
 .tab-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   padding: 0.7rem 1rem;
   border-radius: 999px;
   font-size: 0.92rem;
@@ -363,38 +376,44 @@ loadSavedMaterials();
   box-shadow: 0 10px 22px rgba(245, 158, 11, 0.24);
 }
 
-.section-copy h2 {
-  margin: 0;
-  font-size: 1rem;
-  color: #475569;
-}
-
-.dark .section-copy h2 {
-  color: #cbd5e1;
-}
-
 .saved-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.25rem;
 }
 
 .saved-card {
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
-  border-radius: 1.4rem;
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid rgba(226, 232, 240, 0.9);
-  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
+  border-radius: 1.25rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.saved-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12);
+}
+
+.saved-card-favorite {
+  border-top: 3px solid #ef4444;
+}
+
+.saved-card-bookmark {
+  border-top: 3px solid #10b981;
 }
 
 .dark .saved-card {
-  background: rgba(15, 23, 42, 0.9);
+  background: rgba(15, 23, 42, 0.92);
   border-color: rgba(51, 65, 85, 0.9);
 }
 
 .saved-cover {
   position: relative;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 16 / 10;
   background: linear-gradient(135deg, #f8fafc, #e2e8f0);
 }
 
@@ -406,20 +425,44 @@ loadSavedMaterials();
 
 .saved-type {
   position: absolute;
-  top: 0.85rem;
-  right: 0.85rem;
-  padding: 0.35rem 0.6rem;
+  top: 0.75rem;
+  left: 0.75rem;
+  padding: 0.3rem 0.65rem;
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.75);
   color: white;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   text-transform: capitalize;
+}
+
+.saved-badge {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: white;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+}
+
+.badge-favorite {
+  background: #ef4444;
+}
+
+.badge-bookmark {
+  background: #10b981;
 }
 
 .saved-content {
   display: grid;
-  gap: 0.8rem;
-  padding: 1.1rem;
+  gap: 0.65rem;
+  padding: 1.1rem 1.15rem 1.2rem;
+  flex: 1;
 }
 
 .saved-library,
@@ -427,15 +470,16 @@ loadSavedMaterials();
 .saved-date {
   margin: 0;
   color: #64748b;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
 .saved-title {
   padding: 0;
   text-align: left;
-  font-size: 1.1rem;
+  font-size: 1.05rem;
   font-weight: 700;
   color: #0f172a;
+  line-height: 1.35;
 }
 
 .dark .saved-title {
@@ -445,22 +489,24 @@ loadSavedMaterials();
 .saved-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.4rem;
 }
 
 .saved-meta span {
-  padding: 0.35rem 0.65rem;
+  padding: 0.3rem 0.6rem;
   border-radius: 999px;
   background: rgba(245, 158, 11, 0.1);
   color: #9a3412;
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 600;
 }
 
 .saved-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: 0.5rem;
 }
 
 .primary-action,
@@ -469,9 +515,9 @@ loadSavedMaterials();
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  border-radius: 0.95rem;
-  padding: 0.75rem 1rem;
-  font-size: 0.9rem;
+  border-radius: 0.85rem;
+  padding: 0.65rem 0.9rem;
+  font-size: 0.85rem;
   transition: all 0.2s ease;
 }
 
@@ -482,13 +528,15 @@ loadSavedMaterials();
 }
 
 .secondary-action {
-  color: #b91c1c;
-  background: rgba(254, 226, 226, 0.8);
+  color: #64748b;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
 }
 
-.secondary-action:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.dark .secondary-action {
+  background: #1e293b;
+  border-color: #334155;
+  color: #cbd5e1;
 }
 
 .loading-state,
@@ -504,16 +552,22 @@ loadSavedMaterials();
   border: 1px solid rgba(226, 232, 240, 0.9);
 }
 
-.dark .loading-state,
-.dark .empty-state {
-  background: rgba(15, 23, 42, 0.85);
-  border-color: rgba(51, 65, 85, 0.9);
+.empty-icon {
+  width: 4rem;
+  height: 4rem;
+  display: grid;
+  place-items: center;
+  border-radius: 1rem;
 }
 
-.empty-state h3,
-.empty-state p,
-.loading-state p {
-  margin: 0;
+.empty-icon-favorite {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+.empty-icon-bookmark {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
 }
 
 .loading-spinner {
@@ -532,17 +586,13 @@ loadSavedMaterials();
 }
 
 @media (max-width: 640px) {
-  .page-hero {
-    padding: 1.2rem;
-  }
-
   .tab-panel {
     width: 100%;
     display: grid;
   }
 
   .tab-button {
-    width: 100%;
+    justify-content: center;
   }
 
   .saved-actions {

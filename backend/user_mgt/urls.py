@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     AdminUsersAPIView,
     ChangePasswordAPIView,
+    FirstLoginChangePasswordAPIView,
     ConfirmResetOTPAPIView,
     CustomTokenObtainPairView,
     ForgotPasswordAPIView,
@@ -32,6 +33,8 @@ urlpatterns = [
     path("users/update/<uuid:pk>/", UserUpdateAPIView.as_view(), name="user-update"),
     path("users/<uuid:pk>/delete/", UserDeleteAPIView.as_view(), name="user-delete"),
     path("auth/password/", ChangePasswordAPIView.as_view(), name="auth-change-password"),
+    path("auth/first-login-password/", FirstLoginChangePasswordAPIView.as_view(), name="auth-first-login-password"),
+    path("auth/first-login-password", FirstLoginChangePasswordAPIView.as_view(), name="auth-first-login-password-noslash"),
     path("auth/forgot-password/", ForgotPasswordAPIView.as_view(), name="auth-forgot-password"),
     path("auth/forgot-password", ForgotPasswordAPIView.as_view(), name="auth-forgot-password-noslash"),
     path("auth/confirm-reset-otp/", ConfirmResetOTPAPIView.as_view(), name="auth-confirm-reset-otp"),

@@ -26,3 +26,7 @@ export function resendOtpCode(email) {
 export function resetPassword(data) {
   return api.post(`${path}/reset-password`, data);
 }
+
+export function firstLoginChangePassword(data, config = {}) {
+  return api.addAuthenticationHeader().post(`${path}/first-login-password/`, data, config);
+}

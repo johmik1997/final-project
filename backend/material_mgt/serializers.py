@@ -126,7 +126,7 @@ class PhysicalMaterialSerializer(MaterialFeedbackStatsMixin, serializers.ModelSe
             "id", "title", "author", "category", "genre", "published_date", 
             "department", "language", "isbn", "barcode", "total_copies", 
             "available_copies", "price", "condition", "location", "can_borrow", 
-            "image", "library", "library_name", "created_by", "created_by_name",
+            "image", "description", "library", "library_name", "created_by", "created_by_name",
             "average_rating", "ratings_count", "comments_count", "recent_feedbacks",
             "my_rating", "my_comment", "my_feedback_id"
         ]
@@ -157,7 +157,7 @@ class DigitalMaterialSerializer(MaterialFeedbackStatsMixin, serializers.ModelSer
         fields = [
             "id", "title", "author", "category", "genre", "published_date",
             "department", "language", "isbn", "format", "file_size", "file",
-            "cover_image", "cover_generated_at", "library", "library_name",
+            "cover_image", "cover_generated_at", "description", "library", "library_name",
             "created_by", "created_by_name", "cover_image_url",
             "average_rating", "ratings_count", "comments_count", "recent_feedbacks",
             "my_rating", "my_comment", "my_feedback_id"
@@ -226,6 +226,7 @@ class MaterialTargetMixinSerializer(serializers.ModelSerializer):
             "published_date": getattr(material, "published_date", None),
             "library_id": str(material.library_id) if getattr(material, "library_id", None) else None,
             "library_name": getattr(getattr(material, "library", None), "name", None),
+            "description": getattr(material, "description", None),
         }
 
         if getattr(obj, "physical_material_id", None):

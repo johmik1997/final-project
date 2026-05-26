@@ -1,6 +1,6 @@
 <script setup>
 import BaseIcon from '@/components/base/BaseIcon.vue';
-import { mdiBook, mdiAccount, mdiCheckCircle, mdiStar, mdiBookOpenPageVariant } from '@mdi/js';
+import { mdiBook, mdiAccount, mdiStar, mdiCheckCircle } from '@mdi/js';
 import { computed } from 'vue';
 
 const props = defineProps({
@@ -25,15 +25,15 @@ const availabilityStatus = computed(() => {
 });
 
 const statusClasses = {
-  available: 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300',
-  limited: 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300',
-  unavailable: 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300'
+  available: 'status-available',
+  limited: 'status-limited',
+  unavailable: 'status-unavailable',
 };
 
 const statusText = {
   available: 'Available',
-  limited: 'Limited',
-  unavailable: 'Out of Stock'
+  limited: 'Low stock',
+  unavailable: 'Out of stock',
 };
 
 const isSelectable = computed(() => {
@@ -44,106 +44,291 @@ const isSelectable = computed(() => {
 const availabilityPercentage = computed(() => {
   const total = Number(props.material?.total_copies || 1);
   const available = Number(props.material?.available_copies || 0);
-  return (available / total) * 100;
+  return Math.min(100, Math.max(0, (available / total) * 100));
 });
 </script>
 
 <template>
-  <div 
-    @click="isSelectable && emit('select', material)"
-    class="group relative bg-white dark:bg-slate-800 rounded-xl border-2 transition-all duration-300 cursor-pointer overflow-hidden"
+  <div
+    class="material-card"
     :class="[
-      isSelected 
-        ? 'border-amber-500 ring-4 ring-amber-500/20 dark:ring-amber-500/30 shadow-lg' 
-        : 'border-gray-200 dark:border-slate-700 hover:border-amber-400 dark:hover:border-amber-600 hover:shadow-md',
-      !isSelectable ? 'opacity-60 cursor-not-allowed hover:border-gray-200 dark:hover:border-slate-700' : '',
-      viewMode === 'list' ? 'flex items-stretch' : ''
+      isSelected ? 'is-selected' : '',
+      !isSelectable ? 'is-disabled' : '',
+      viewMode === 'list' ? 'layout-list' : '',
     ]"
+    @click="isSelectable && emit('select', material)"
   >
-    <!-- Card Image/Icon Section -->
-    <div
-      class="relative bg-gradient-to-br from-amber-50/50 to-orange-50/30 dark:from-slate-700 dark:to-slate-800 flex items-center justify-center"
-      :class="viewMode === 'list' ? 'w-28 border-r border-gray-100 dark:border-slate-700' : 'h-32 border-b border-gray-100 dark:border-slate-700'"
-    >
-      <div class="w-14 h-14 bg-white dark:bg-slate-700 rounded-xl shadow-md flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
-        <BaseIcon 
-          :path="mdiBook" 
-          size="28" 
-          class="text-amber-500 dark:text-amber-400" 
-        />
+    <div class="card-visual">
+      <div class="icon-wrap">
+        <BaseIcon :path="mdiBook" size="28" class="text-amber-500" />
       </div>
-      
-      <!-- Selected Badge -->
-      <div 
-        v-if="isSelected" 
-        class="absolute top-2 right-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white p-1.5 rounded-lg shadow-md animate-pulse"
-      >
+      <span v-if="isSelected" class="selected-badge">
         <BaseIcon :path="mdiCheckCircle" size="14" />
-      </div>
-
-      <!-- Availability Badge on Image -->
-      <div 
-        v-if="availabilityStatus === 'limited'" 
-        class="absolute bottom-2 left-2 bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full"
-      >
-        Low Stock
-      </div>
+      </span>
+      <span v-if="availabilityStatus === 'limited'" class="low-stock-pill">Low stock</span>
     </div>
 
-    <!-- Card Content -->
-    <div class="p-3" :class="viewMode === 'list' ? 'flex-1 flex flex-col justify-center' : ''">
-      <h5 class="font-semibold text-gray-900 dark:text-white truncate mb-1 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors text-sm">
-        {{ material.title || 'Untitled' }}
-      </h5>
-      
-      <div class="flex justify-between items-center mb-2">
-        <p class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
-          <BaseIcon :path="mdiAccount" size="10" class="text-gray-400 dark:text-gray-600" />
-          {{ material.author || 'Unknown Author' }}
+    <div class="card-body">
+      <p class="card-category">{{ material.category || 'General' }}</p>
+      <h5 class="card-title">{{ material.title || 'Untitled' }}</h5>
+
+      <div class="card-author-row">
+        <p class="card-author">
+          <BaseIcon :path="mdiAccount" size="12" />
+          {{ material.author || 'Unknown author' }}
         </p>
-        <div class="flex items-center text-amber-500 text-xs font-medium" v-if="material.average_rating || material.rating">
+        <div v-if="material.average_rating || material.rating" class="card-rating">
           <BaseIcon :path="mdiStar" size="12" />
-          <span class="ml-0.5">{{ Number(material.average_rating || material.rating || 0).toFixed(1) }}</span>
+          {{ Number(material.average_rating || material.rating || 0).toFixed(1) }}
         </div>
       </div>
 
-      <!-- Additional Info for List View -->
-      <div v-if="viewMode === 'list'" class="flex items-center gap-3 mt-1 text-xs">
-        <span class="text-gray-500 dark:text-gray-400">ISBN: {{ material.isbn || 'N/A' }}</span>
-        <span class="text-gray-500 dark:text-gray-400">Category: {{ material.category || 'General' }}</span>
+      <div v-if="viewMode === 'list'" class="list-meta">
+        <span>ISBN: {{ material.isbn || 'N/A' }}</span>
       </div>
 
-      <!-- Status and Copies -->
-      <div class="flex items-center justify-between" :class="viewMode === 'list' ? 'mt-2' : ''">
-        <span 
-          class="text-[10px] font-semibold px-2 py-0.5 rounded-full transition-all"
-          :class="statusClasses[availabilityStatus]"
-        >
+      <div class="card-footer">
+        <span class="status-pill" :class="statusClasses[availabilityStatus]">
           {{ statusText[availabilityStatus] }}
         </span>
-        <div class="flex items-center gap-1">
-          <span class="text-xs font-medium text-gray-700 dark:text-gray-300">
-            {{ material.available_copies || 0 }}/{{ material.total_copies || 0 }}
-          </span>
-          <span class="text-[10px] text-gray-400 dark:text-gray-600">copies</span>
-        </div>
+        <span class="copies-label">
+          {{ material.available_copies || 0 }}/{{ material.total_copies || 0 }} copies
+        </span>
       </div>
 
-      <!-- Progress Bar for Grid View -->
-      <div v-if="viewMode === 'grid'" class="mt-2">
-        <div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-1">
-          <div 
-            class="h-1 rounded-full transition-all duration-500"
-            :class="availabilityPercentage > 50 ? 'bg-green-500' : availabilityPercentage > 0 ? 'bg-amber-500' : 'bg-red-500'"
-            :style="{ width: `${availabilityPercentage}%` }"
-          ></div>
-        </div>
+      <div v-if="viewMode === 'grid'" class="progress-track">
+        <div
+          class="progress-fill"
+          :class="availabilityPercentage > 50 ? 'fill-green' : availabilityPercentage > 0 ? 'fill-amber' : 'fill-red'"
+          :style="{ width: `${availabilityPercentage}%` }"
+        />
       </div>
 
-      <!-- Select Indicator -->
-      <div v-if="!isSelected && isSelectable" class="mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-        <span class="text-[10px] text-amber-600 dark:text-amber-400 font-medium">Click to select →</span>
-      </div>
+      <p v-if="!isSelected && isSelectable" class="select-hint">Click to select</p>
     </div>
   </div>
 </template>
+
+<style scoped>
+.material-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: 1rem;
+  border: 2px solid #e2e8f0;
+  background: #fff;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+}
+
+.material-card:hover:not(.is-disabled) {
+  transform: translateY(-2px);
+  border-color: #fbbf24;
+  box-shadow: 0 14px 28px rgba(245, 158, 11, 0.15);
+}
+
+.material-card.is-selected {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
+}
+
+.material-card.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.material-card.layout-list {
+  flex-direction: row;
+}
+
+.dark .material-card {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+.card-visual {
+  position: relative;
+  min-height: 7rem;
+  background: linear-gradient(145deg, #fff7ed 0%, #ffedd5 45%, #fef3c7 100%);
+  display: grid;
+  place-items: center;
+  border-bottom: 1px solid #fde68a;
+}
+
+.layout-list .card-visual {
+  width: 7rem;
+  min-height: auto;
+  border-bottom: none;
+  border-right: 1px solid #fde68a;
+}
+
+.dark .card-visual {
+  background: linear-gradient(145deg, #1e293b, #334155);
+  border-color: #475569;
+}
+
+.icon-wrap {
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 0.85rem;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 6px 14px rgba(245, 158, 11, 0.2);
+}
+
+.selected-badge {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 0.5rem;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #f59e0b, #ea580c);
+  color: white;
+}
+
+.low-stock-pill {
+  position: absolute;
+  bottom: 0.55rem;
+  left: 0.55rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: #f59e0b;
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.card-body {
+  padding: 0.85rem 0.95rem 1rem;
+  display: grid;
+  gap: 0.45rem;
+  flex: 1;
+}
+
+.card-category {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #b45309;
+}
+
+.card-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.dark .card-title {
+  color: #f8fafc;
+}
+
+.card-author-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.card-author {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.card-rating {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #f59e0b;
+}
+
+.list-meta {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.status-pill {
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.status-available {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.status-limited {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.status-unavailable {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.copies-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.progress-track {
+  height: 0.28rem;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.fill-green {
+  background: #22c55e;
+}
+
+.fill-amber {
+  background: #f59e0b;
+}
+
+.fill-red {
+  background: #ef4444;
+}
+
+.select-hint {
+  margin: 0.15rem 0 0;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #d97706;
+}
+</style>

@@ -50,6 +50,11 @@ export function generateMaterialDescription(payload = {}) {
   return api.addAuthenticationHeader().post("/material/generate-description/", payload);
 }
 
+export function lookupMaterialBarcode(code) {
+  const qr = getQueryFormObject({ code });
+  return api.addAuthenticationHeader().get(`/material/lookup-barcode/${qr}`);
+}
+
 export function sendLibraryAssistantMessage(payload = {}) {
   return api.addAuthenticationHeader().post("/material/assistant-chat/", payload);
 }

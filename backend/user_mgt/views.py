@@ -16,6 +16,7 @@ from .permissions import CanCreateUsers, CanDeleteUsers, IsSuperAdminForWrite
 from .serializers import (
     AdminUserListSerializer,
     ChangePasswordSerializer,
+    FirstLoginChangePasswordSerializer,
     ConfirmResetOTPSerializer,
     ForgotPasswordSerializer,
     LibrarySerializer,
@@ -47,9 +48,24 @@ class ChangePasswordAPIView(APIView):
         if not user.check_password(serializer.validated_data["old_password"]):
             raise ValidationError({"old_password": "Old password is incorrect."})
         user.set_password(serializer.validated_data["new_password"])
-        user.save(update_fields=["password"])
+        user.must_change_password = False
+        user.save(update_fields=["password", "must_change_password"])
         update_session_auth_hash(request, user)
         return Response({"detail": "Password updated."}, status=status.HTTP_200_OK)
+
+
+class FirstLoginChangePasswordAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = FirstLoginChangePasswordSerializer(
+            data=request.data,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        update_session_auth_hash(request, request.user)
+        return Response({"detail": "Password updated.", "must_change_password": False}, status=status.HTTP_200_OK)
 
 
 # --- Password Reset Flow ---

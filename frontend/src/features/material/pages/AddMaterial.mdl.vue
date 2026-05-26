@@ -4,16 +4,18 @@ import Button from '@/components/Button.vue';
 import Input from '@/components/new_form_elements/Input.vue';
 import Select from '@/components/new_form_elements/Select.vue';
 import Form from '@/components/new_form_builder/Form.vue';
+import BarcodeScanner from '@/components/BarcodeScanner.vue';
 import { closeModal } from '@customizer/modal-x';
 import { useApiRequest } from '@/composables/useApiRequest';
-import { CreateMaterial } from '../api/materialApi';
+import { CreateMaterial, lookupMaterialBarcode } from '../api/materialApi';
 import { toasted } from '@/utils/utils';
 import { useForm } from '@/components/new_form_builder/useForm';
 import { useMaterials } from '../store/materialStore';
 import { emitEntityMutation } from '@/utils/entitySync';
 import { getAllLibrary } from '@/features/library/api/libraryApi';
+import { setFormFieldValue } from '@/utils/formFieldHelpers';
 import BaseIcon from '@/components/base/BaseIcon.vue';
-import { mdiClose } from '@mdi/js';
+import { mdiBarcode, mdiClose } from '@mdi/js';
 
 const { submit } = useForm('addMaterialForm');
 const req = useApiRequest();
@@ -21,6 +23,8 @@ const libraryReq = useApiRequest();
 const materialStore = useMaterials();
 const currentStep = ref(1);
 const totalSteps = computed(() => 3);
+const showBarcodeScanner = ref(false);
+const lookupPending = ref(false);
 
 const currentType = computed(() => materialStore.createType || 'physical');
 const isDigital = computed(() => currentType.value === 'digital');
@@ -108,7 +112,39 @@ function prevStep() {
     currentStep.value--;
   }
 }
-
+const departments = [
+  'Biology',
+  'Chemistry',
+  'Physics',
+  'Mathematics',
+  'Statistics',
+  'Civil Engineering',
+  'Mechanical Engineering',
+  'Electrical & Computer Engineering',
+  'Software Engineering',
+  'Information Technology',
+  'Computer Science',
+  'Architecture',
+  'Agronomy',
+  'Animal Science',
+  'Plant Science',
+  'Nursing',
+  'Public Health',
+  'Medicine',
+  'Pharmacy',
+  'Economics',
+  'Sociology',
+  'Political Science',
+  'History',
+  'Geography',
+  'Law',
+  'Business Administration',
+  'Accounting & Finance',
+  'Management',
+  'Education',
+  'Journalism & Communication',
+  'Other'
+];
 function handleCreate({ values }) {
   if (isDigital.value) {
     const fileInput = document.querySelector('input[name="file"]');
@@ -189,6 +225,50 @@ function handleCreate({ values }) {
 function validateAndNext() {
   nextStep();
 }
+
+function applyLookupData(data = {}) {
+  const fields = {
+    title: data.title,
+    author: data.author,
+    isbn: data.isbn,
+    published_date: data.published_date ? String(data.published_date).slice(0, 10) : '',
+    category: data.category,
+    genre: data.genre,
+    language: data.language,
+    department: data.department,
+  };
+
+  Object.entries(fields).forEach(([name, value]) => {
+    if (value) setFormFieldValue('addMaterialForm', name, value);
+  });
+}
+
+async function handleBarcodeScan(code) {
+  const scanned = String(code || '').trim();
+  if (!scanned) return;
+
+  showBarcodeScanner.value = false;
+  setFormFieldValue('addMaterialForm', 'isbn', scanned);
+  lookupPending.value = true;
+
+  try {
+    const res = await lookupMaterialBarcode(scanned);
+    const payload = res?.data || res;
+
+    if (payload?.found && payload?.data) {
+      applyLookupData(payload.data);
+      const sourceLabel = payload.source === 'library' ? 'existing library record' : 'ISBN database';
+      toasted(true, `Book details loaded from ${sourceLabel}`);
+      return;
+    }
+
+    toasted(false, 'No book metadata found for this barcode. Enter details manually.');
+  } catch {
+    toasted(false, 'Could not look up barcode. Enter details manually.');
+  } finally {
+    lookupPending.value = false;
+  }
+}
 </script>
 
 <template>
@@ -244,10 +324,29 @@ function validateAndNext() {
           <!-- Step 1: Basic Information -->
           <div v-show="currentStep === 1" class="step-content">
             <h3 class="step-title-heading">Basic Information</h3>
+
+            <div v-if="!isDigital" class="scan-panel">
+              <button
+                type="button"
+                class="scan-toggle-btn"
+                :class="{ active: showBarcodeScanner }"
+                @click="showBarcodeScanner = !showBarcodeScanner"
+              >
+                <BaseIcon :path="mdiBarcode" size="18" />
+                {{ showBarcodeScanner ? 'Hide scanner' : 'Scan ISBN / barcode' }}
+              </button>
+              <p v-if="lookupPending" class="scan-status">Looking up book information...</p>
+              <BarcodeScanner
+                v-if="showBarcodeScanner"
+                :active="showBarcodeScanner"
+                @scan="handleBarcodeScan"
+              />
+            </div>
+
             <div class="form-grid">
               <Input name="title" validation="required" label="Title" :attributes="{ placeholder: 'Material Title' }" />
               <Input name="author" validation="required" label="Author" :attributes="{ placeholder: 'Author Name' }" />
-              <Input name="isbn" label="ISBN" :attributes="{ placeholder: 'Enter ISBN' }" />
+              <Input name="isbn" label="ISBN / Barcode" :attributes="{ placeholder: 'Scan or enter ISBN' }" />
               <Input name="published_date" type="date" label="Published Date" validation="required" />
             </div>
           </div>
@@ -267,7 +366,7 @@ function validateAndNext() {
               <Select name="language" label="Language" validation="required"
                 :options="['English', 'Amharic']"
                 :attributes="{ placeholder: 'e.g. English, Amharic' }" />
-              <Input name="department" label="Department" :attributes="{ placeholder: 'Target Department' }" />
+              <Select name="department" label="Department" :options="departments" :attributes="{ placeholder: 'Target Department' }" />
               <Select
                 :obj="true"
                 name="library"
@@ -740,6 +839,38 @@ function validateAndNext() {
 .file-hint {
   font-size: 0.75rem;
   color: #64748b;
+}
+
+.scan-panel {
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.scan-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  align-self: flex-start;
+  padding: 0.5rem 0.9rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.08);
+  color: #b45309;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.scan-toggle-btn.active {
+  background: rgba(245, 158, 11, 0.18);
+}
+
+.scan-status {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #b45309;
 }
 
 .dark .file-hint {

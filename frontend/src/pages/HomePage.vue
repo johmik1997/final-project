@@ -3,116 +3,232 @@
     <!-- Navbar with Search -->
     <nav class="sticky top-0 z-50 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-gray-200 dark:border-white/10 transition-colors duration-300">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between items-center h-16">
+        <div class="flex justify-between items-center h-20">
           <!-- Logo / Home -->
-          <button @click="scrollTo('hero')" class="flex items-center space-x-2 hover:opacity-80 transition">
+          <button @click="scrollTo('hero')" class="flex items-center space-x-3 hover:opacity-80 transition">
             <img 
-              src='../assets/logolib.jpg'
+              src="../assets/logolib.jpg"
               alt="Logo" 
-              class="w-12 h-12 rounded-full object-cover border-2 border-amber-500 shadow-lg shadow-amber-500/30"
+              class="w-14 h-14 rounded-full object-cover border-2 border-amber-500 shadow-lg shadow-amber-500/30"
             >
-            <span class="text-slate-900 dark:text-white font-bold text-lg">HU<span class="text-amber-500">-DLRBS</span></span>
+            <span class="text-slate-900 dark:text-white font-bold text-2xl">
+              HU<span class="text-amber-500">-DLRBS</span>
+            </span>
           </button>
 
           <!-- Desktop Navigation -->
-          <div class="hidden md:flex items-center space-x-4">
-            <button @click="scrollTo('hero')" class="text-slate-600 dark:text-slate-300 hover:text-amber-500 dark:hover:text-amber-400 transition text-sm font-medium">Home</button>
-            
+          <div class="hidden md:flex items-center space-x-6">
+            <button 
+              @click="scrollTo('hero')" 
+              class="text-slate-600 dark:text-slate-300 hover:text-amber-500 dark:hover:text-amber-400 transition text-base font-medium"
+            >
+              Home
+            </button>
+
             <!-- Campus Dropdown -->
-            <div class="relative" @mouseenter="showCampus = true" @mouseleave="showCampus = false">
-              <button class="flex items-center space-x-1 text-slate-600 dark:text-slate-300 hover:text-amber-500 dark:hover:text-amber-400 transition text-sm font-medium py-2">
+            <div 
+              class="relative" 
+              @mouseenter="showCampus = true" 
+              @mouseleave="showCampus = false"
+            >
+              <button class="flex items-center space-x-1 text-slate-600 dark:text-slate-300 hover:text-amber-500 dark:hover:text-amber-400 transition text-base font-medium py-2">
                 <span>Campus</span>
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
                 </svg>
               </button>
-              <div v-show="showCampus" class="absolute left-0 top-full w-56 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-gray-200 dark:border-white/10 overflow-hidden">
+
+              <div 
+                v-show="showCampus" 
+                class="absolute left-0 top-full w-64 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-gray-200 dark:border-white/10 overflow-hidden"
+              >
                 <div class="p-2">
-                  <button v-for="campus in campuses" :key="campus.id" @click="selectCampus(campus)" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 hover:text-amber-500 dark:hover:text-white transition text-sm">
+                  <button
+                    v-for="campus in campuses"
+                    :key="campus.id"
+                    @click="selectCampus(campus)"
+                    class="w-full text-left px-4 py-3 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 hover:text-amber-500 dark:hover:text-white transition text-base"
+                  >
                     {{ campus.name }}
                   </button>
                 </div>
               </div>
             </div>
-            
-            <button @click="scrollTo('materials')" class="text-slate-600 dark:text-slate-300 hover:text-amber-500 dark:hover:text-amber-400 transition text-sm font-medium">Materials</button>
-            <button @click="scrollTo('about')" class="text-slate-600 dark:text-slate-300 hover:text-amber-500 dark:hover:text-amber-400 transition text-sm font-medium">About</button>
-            <button @click="scrollTo('staff')" class="text-slate-600 dark:text-slate-300 hover:text-amber-500 dark:hover:text-amber-400 transition text-sm font-medium">Administration</button>
-            <button @click="scrollTo('help')" class="text-slate-600 dark:text-slate-300 hover:text-amber-500 dark:hover:text-amber-400 transition text-sm font-medium">Help</button>
+
+            <button 
+              @click="scrollTo('materials')" 
+              class="text-slate-600 dark:text-slate-300 hover:text-amber-500 dark:hover:text-amber-400 transition text-base font-medium"
+            >
+              Materials
+            </button>
+
+            <button 
+              @click="scrollTo('about')" 
+              class="text-slate-600 dark:text-slate-300 hover:text-amber-500 dark:hover:text-amber-400 transition text-base font-medium"
+            >
+              About
+            </button>
+
+            <button 
+              @click="scrollTo('staff')" 
+              class="text-slate-600 dark:text-slate-300 hover:text-amber-500 dark:hover:text-amber-400 transition text-base font-medium"
+            >
+              Administration
+            </button>
+
+            <button 
+              @click="scrollTo('help')" 
+              class="text-slate-600 dark:text-slate-300 hover:text-amber-500 dark:hover:text-amber-400 transition text-base font-medium"
+            >
+              Help
+            </button>
           </div>
 
           <!-- Search Bar -->
-          <div class="hidden md:flex items-center bg-gray-100 dark:bg-slate-800 rounded-full px-4 py-1.5 border border-gray-200 dark:border-white/10 w-64 transition-colors duration-300">
-            <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div class="hidden md:flex items-center bg-gray-100 dark:bg-slate-800 rounded-full px-5 py-2 border border-gray-200 dark:border-white/10 w-72 transition-colors duration-300">
+            <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
             </svg>
-            <input type="text" placeholder="Search books, resources..." v-model="searchQuery" class="bg-transparent text-slate-800 dark:text-white text-sm ml-2 outline-none w-full placeholder-slate-400 dark:placeholder-slate-500">
+            <input
+              type="text"
+              placeholder="Search books, resources..."
+              v-model="searchQuery"
+              class="bg-transparent text-slate-800 dark:text-white text-base ml-3 outline-none w-full placeholder-slate-400 dark:placeholder-slate-500"
+            >
           </div>
 
-          <!-- Auth Buttons + Theme Toggle + Mobile Menu Toggle -->
-          <div class="flex items-center space-x-2">
+          <!-- Right Side -->
+          <div class="flex items-center space-x-3">
             <!-- Theme Toggle -->
             <ThemeToggle id="homepage-theme-toggle" />
 
-            <button @click="$router.push('/login')" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-red-500 text-white text-sm font-semibold hover:shadow-lg transition">
+            <!-- Sign In -->
+            <button 
+              @click="$router.push('/login')" 
+              class="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-red-500 text-white text-base font-semibold hover:shadow-lg hover:scale-105 transition duration-300"
+            >
               Sign In
             </button>
-            
+
             <!-- Mobile Menu Button -->
             <button 
               @click="mobileMenuOpen = !mobileMenuOpen"
               class="md:hidden p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:text-amber-500 hover:bg-gray-100 dark:hover:bg-white/10 transition"
               aria-label="Menu"
             >
-              <svg v-if="!mobileMenuOpen" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg 
+                v-if="!mobileMenuOpen" 
+                class="w-7 h-7" 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
               </svg>
-              <svg v-else class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg 
+                v-else 
+                class="w-7 h-7" 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
               </svg>
             </button>
           </div>
         </div>
+        <!-- Motto - Perfect Positioning -->
+        <div class="flex justify-center pb-2">
+          <span class="text-xs md:text-xl text-slate-500 dark:text-slate-100 font-medium tracking-wide">
+            Empowering Knowledge Through Digital Learning
+          </span>
+        </div>
       </div>
-      
+
       <!-- Mobile Navigation Menu -->
       <transition name="mobile-menu">
-        <div v-if="mobileMenuOpen" class="md:hidden border-t border-gray-200 dark:border-white/10 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md">
-          <div class="px-4 py-3 space-y-2">
-            <button @click="scrollTo('hero'); mobileMenuOpen = false" class="w-full text-left px-3 py-2 rounded-lg text-slate-700 dark:text-slate-300 hover:text-amber-500 hover:bg-gray-100 dark:hover:bg-white/10 transition text-sm font-medium">
+        <div 
+          v-if="mobileMenuOpen" 
+          class="md:hidden border-t border-gray-200 dark:border-white/10 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md"
+        >
+          <div class="px-4 py-4 space-y-2">
+            <button 
+              @click="scrollTo('hero'); mobileMenuOpen = false"
+              class="w-full text-left px-4 py-3 rounded-lg text-slate-700 dark:text-slate-300 hover:text-amber-500 hover:bg-gray-100 dark:hover:bg-white/10 transition text-base font-medium"
+            >
               Home
             </button>
-            
+
             <!-- Mobile Campus Dropdown -->
             <div class="relative">
               <button 
                 @click="mobileShowCampus = !mobileShowCampus"
-                class="w-full flex items-center justify-between px-3 py-2 rounded-lg text-slate-700 dark:text-slate-300 hover:text-amber-500 hover:bg-gray-100 dark:hover:bg-white/10 transition text-sm font-medium"
+                class="w-full flex items-center justify-between px-4 py-3 rounded-lg text-slate-700 dark:text-slate-300 hover:text-amber-500 hover:bg-gray-100 dark:hover:bg-white/10 transition text-base font-medium"
               >
                 <span>Campus</span>
-                <svg class="w-4 h-4 transition-transform duration-200" :class="{ 'rotate-180': mobileShowCampus }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg 
+                  class="w-5 h-5 transition-transform duration-200"
+                  :class="{ 'rotate-180': mobileShowCampus }"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
                 </svg>
               </button>
+
               <div v-show="mobileShowCampus" class="pl-4 space-y-1 mt-1">
-                <button v-for="campus in campuses" :key="campus.id" @click="selectCampus(campus); mobileMenuOpen = false; mobileShowCampus = false" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 text-slate-600 dark:text-slate-400 hover:text-amber-500 transition text-sm">
+                <button
+                  v-for="campus in campuses"
+                  :key="campus.id"
+                  @click="selectCampus(campus); mobileMenuOpen = false; mobileShowCampus = false"
+                  class="w-full text-left px-4 py-3 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 text-slate-600 dark:text-slate-400 hover:text-amber-500 transition text-base"
+                >
                   {{ campus.name }}
                 </button>
               </div>
             </div>
-            
-            <button @click="scrollTo('materials'); mobileMenuOpen = false" class="w-full text-left px-3 py-2 rounded-lg text-slate-700 dark:text-slate-300 hover:text-amber-500 hover:bg-gray-100 dark:hover:bg-white/10 transition text-sm font-medium">Materials</button>
-            <button @click="scrollTo('about'); mobileMenuOpen = false" class="w-full text-left px-3 py-2 rounded-lg text-slate-700 dark:text-slate-300 hover:text-amber-500 hover:bg-gray-100 dark:hover:bg-white/10 transition text-sm font-medium">About</button>
-            <button @click="scrollTo('staff'); mobileMenuOpen = false" class="w-full text-left px-3 py-2 rounded-lg text-slate-700 dark:text-slate-300 hover:text-amber-500 hover:bg-gray-100 dark:hover:bg-white/10 transition text-sm font-medium">Administration</button>
-            <button @click="scrollTo('help'); mobileMenuOpen = false" class="w-full text-left px-3 py-2 rounded-lg text-slate-700 dark:text-slate-300 hover:text-amber-500 hover:bg-gray-100 dark:hover:bg-white/10 transition text-sm font-medium">Help</button>
-            
+
+            <button 
+              @click="scrollTo('materials'); mobileMenuOpen = false"
+              class="w-full text-left px-4 py-3 rounded-lg text-slate-700 dark:text-slate-300 hover:text-amber-500 hover:bg-gray-100 dark:hover:bg-white/10 transition text-base font-medium"
+            >
+              Materials
+            </button>
+
+            <button 
+              @click="scrollTo('about'); mobileMenuOpen = false"
+              class="w-full text-left px-4 py-3 rounded-lg text-slate-700 dark:text-slate-300 hover:text-amber-500 hover:bg-gray-100 dark:hover:bg-white/10 transition text-base font-medium"
+            >
+              About
+            </button>
+
+            <button 
+              @click="scrollTo('staff'); mobileMenuOpen = false"
+              class="w-full text-left px-4 py-3 rounded-lg text-slate-700 dark:text-slate-300 hover:text-amber-500 hover:bg-gray-100 dark:hover:bg-white/10 transition text-base font-medium"
+            >
+              Administration
+            </button>
+
+            <button 
+              @click="scrollTo('help'); mobileMenuOpen = false"
+              class="w-full text-left px-4 py-3 rounded-lg text-slate-700 dark:text-slate-300 hover:text-amber-500 hover:bg-gray-100 dark:hover:bg-white/10 transition text-base font-medium"
+            >
+              Help
+            </button>
+
             <!-- Mobile Search -->
-            <div class="pt-2 border-t border-gray-200 dark:border-white/10 mt-2">
-              <div class="flex items-center bg-gray-100 dark:bg-slate-800 rounded-full px-4 py-2 border border-gray-200 dark:border-white/10">
-                <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div class="pt-3 border-t border-gray-200 dark:border-white/10 mt-3">
+              <div class="flex items-center bg-gray-100 dark:bg-slate-800 rounded-full px-4 py-3 border border-gray-200 dark:border-white/10">
+                <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                 </svg>
-                <input type="text" placeholder="Search books..." v-model="searchQuery" class="bg-transparent text-slate-800 dark:text-white text-sm ml-2 outline-none w-full placeholder-slate-400 dark:placeholder-slate-500">
+                <input
+                  type="text"
+                  placeholder="Search books..."
+                  v-model="searchQuery"
+                  class="bg-transparent text-slate-800 dark:text-white text-base ml-3 outline-none w-full placeholder-slate-400 dark:placeholder-slate-500"
+                >
               </div>
             </div>
           </div>
@@ -160,6 +276,61 @@
       </div>
     </section>
 
+
+     <section id="staff" class="py-16 bg-gray-50 dark:bg-slate-800/20 transition-colors duration-300">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-12">
+          <span class="text-amber-500 text-sm font-semibold uppercase tracking-wider">Leadership</span>
+          <h2 class="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white mt-2 transition-colors duration-300">Library Administration & Staff</h2>
+          <p class="text-slate-500 dark:text-slate-400 mt-2 transition-colors duration-300">Meet the team managing your library experience</p>
+        </div>
+
+        <div class="relative max-w-4xl mx-auto">
+          <button @click="prevStaff" class="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-4 md:-translate-x-12 z-10 w-10 h-10 rounded-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-white/20 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-slate-700 transition shadow-sm">
+            <svg class="w-5 h-5 text-slate-700 dark:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+          </button>
+          <button @click="nextStaff" class="absolute right-0 top-1/2 -translate-y-1/2 translate-x-4 md:translate-x-12 z-10 w-10 h-10 rounded-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-white/20 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-slate-700 transition shadow-sm">
+            <svg class="w-5 h-5 text-slate-700 dark:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+          </button>
+
+          <div class="relative overflow-hidden rounded-2xl min-h-[450px]">
+            <div class="flex transition-transform duration-500 ease-out" :style="{ transform: `translateX(-${staffIndex * 100}%)` }">
+              <div v-for="staff in staffMembers" :key="staff.id" class="w-full flex-shrink-0">
+                <div class="bg-white dark:bg-slate-800/60 rounded-2xl border border-gray-200 dark:border-white/10 overflow-hidden mx-4 shadow-sm transition-colors duration-300">
+                  <div class="grid md:grid-cols-2 gap-0">
+                    <div class="h-80 md:h-auto relative overflow-hidden">
+                      <img :src="staff.image" :alt="staff.name" class="w-full h-full object-cover">
+                      <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent md:hidden"></div>
+                    </div>
+                    <div class="p-6 md:p-8 flex flex-col justify-center">
+                      <div class="inline-block px-3 py-1 bg-amber-500/10 dark:bg-amber-500/20 rounded-full text-amber-600 dark:text-amber-400 text-xs font-semibold w-fit mb-3">
+                        {{ staff.role }}
+                      </div>
+                      <h3 class="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white mb-2 transition-colors duration-300">{{ staff.name }}</h3>
+                      <p class="text-slate-600 dark:text-slate-300 leading-relaxed mb-4 transition-colors duration-300">{{ staff.bio }}</p>
+                      <div class="flex flex-col space-y-2 text-sm text-slate-500 dark:text-slate-400 transition-colors duration-300">
+                        <div class="flex items-center space-x-2">
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                          <span>{{ staff.email }}</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                          <span>{{ staff.experience }}+ years of experience</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex justify-center space-x-2 mt-6">
+            <button v-for="(_, idx) in staffMembers" :key="idx" @click="staffIndex = idx" class="h-2 rounded-full transition-all duration-300" :class="staffIndex === idx ? 'w-8 bg-amber-500' : 'w-2 bg-gray-300 dark:bg-white/30'"></button>
+          </div>
+        </div>
+      </div>
+    </section>
     <!-- Campus Section -->
     <section id="campus-section" class="py-16 bg-slate-100 dark:bg-slate-900 transition-colors duration-300">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -406,84 +577,13 @@
       </div>
     </section>
 
-    <!-- Administration / Staff Section -->
-    <section id="staff" class="py-16 bg-gray-50 dark:bg-slate-800/20 transition-colors duration-300">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="text-center mb-12">
-          <span class="text-amber-500 text-sm font-semibold uppercase tracking-wider">Leadership</span>
-          <h2 class="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white mt-2 transition-colors duration-300">Library Administration & Staff</h2>
-          <p class="text-slate-500 dark:text-slate-400 mt-2 transition-colors duration-300">Meet the team managing your library experience</p>
-        </div>
-
-        <div class="relative max-w-4xl mx-auto">
-          <button @click="prevStaff" class="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-4 md:-translate-x-12 z-10 w-10 h-10 rounded-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-white/20 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-slate-700 transition shadow-sm">
-            <svg class="w-5 h-5 text-slate-700 dark:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
-          </button>
-          <button @click="nextStaff" class="absolute right-0 top-1/2 -translate-y-1/2 translate-x-4 md:translate-x-12 z-10 w-10 h-10 rounded-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-white/20 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-slate-700 transition shadow-sm">
-            <svg class="w-5 h-5 text-slate-700 dark:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
-          </button>
-
-          <div class="relative overflow-hidden rounded-2xl min-h-[450px]">
-            <div class="flex transition-transform duration-500 ease-out" :style="{ transform: `translateX(-${staffIndex * 100}%)` }">
-              <div v-for="staff in staffMembers" :key="staff.id" class="w-full flex-shrink-0">
-                <div class="bg-white dark:bg-slate-800/60 rounded-2xl border border-gray-200 dark:border-white/10 overflow-hidden mx-4 shadow-sm transition-colors duration-300">
-                  <div class="grid md:grid-cols-2 gap-0">
-                    <div class="h-80 md:h-auto relative overflow-hidden">
-                      <img :src="staff.image" :alt="staff.name" class="w-full h-full object-cover">
-                      <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent md:hidden"></div>
-                    </div>
-                    <div class="p-6 md:p-8 flex flex-col justify-center">
-                      <div class="inline-block px-3 py-1 bg-amber-500/10 dark:bg-amber-500/20 rounded-full text-amber-600 dark:text-amber-400 text-xs font-semibold w-fit mb-3">
-                        {{ staff.role }}
-                      </div>
-                      <h3 class="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white mb-2 transition-colors duration-300">{{ staff.name }}</h3>
-                      <p class="text-slate-600 dark:text-slate-300 leading-relaxed mb-4 transition-colors duration-300">{{ staff.bio }}</p>
-                      <div class="flex flex-col space-y-2 text-sm text-slate-500 dark:text-slate-400 transition-colors duration-300">
-                        <div class="flex items-center space-x-2">
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
-                          <span>{{ staff.email }}</span>
-                        </div>
-                        <div class="flex items-center space-x-2">
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                          <span>{{ staff.experience }}+ years of experience</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="flex justify-center space-x-2 mt-6">
-            <button v-for="(_, idx) in staffMembers" :key="idx" @click="staffIndex = idx" class="h-2 rounded-full transition-all duration-300" :class="staffIndex === idx ? 'w-8 bg-amber-500' : 'w-2 bg-gray-300 dark:bg-white/30'"></button>
-          </div>
-        </div>
-      </div>
-    </section>
+   
+   
 
     <!-- Help Section -->
     <section id="help" class="py-20 bg-white dark:bg-gradient-to-br dark:from-slate-900 dark:to-slate-800 transition-colors duration-300">
       <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        <!-- Header -->
-        <div class="text-center mb-14">
-          <span class="text-amber-500 text-sm font-semibold uppercase tracking-wider">Support</span>
-          <h2 class="text-4xl font-bold text-slate-900 dark:text-white mt-3 transition-colors duration-300">How to Use the System</h2>
-          <p class="text-slate-500 dark:text-slate-400 mt-3 max-w-xl mx-auto transition-colors duration-300">Follow these simple steps to search, reserve, and borrow library materials easily.</p>
-        </div>
-
-        <!-- Steps -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-14">
-          <div v-for="(step, idx) in helpSteps" :key="idx" class="group text-center p-5 bg-gray-50 dark:bg-slate-800/60 rounded-xl border border-gray-200 dark:border-white/10 hover:border-amber-500/40 hover:-translate-y-1 transition-all duration-300">
-            <div class="w-14 h-14 mx-auto bg-amber-100 dark:bg-amber-500/20 rounded-full flex items-center justify-center mb-4">
-              <span class="text-amber-600 dark:text-amber-500 font-bold text-xl">{{ idx + 1 }}</span>
-            </div>
-            <p class="text-slate-800 dark:text-white font-semibold transition-colors duration-300">{{ step.title }}</p>
-            <p class="text-slate-500 dark:text-slate-400 text-xs mt-2 transition-colors duration-300">{{ step.desc }}</p>
-          </div>
-        </div>
-
-        <!-- FAQ Section -->
+         <!-- FAQ Section -->
         <div class="bg-gray-50 dark:bg-slate-800/40 rounded-2xl border border-gray-200 dark:border-white/10 overflow-hidden backdrop-blur-sm transition-colors duration-300">
           <div class="p-6 border-b border-gray-200 dark:border-white/10 bg-white dark:bg-slate-800/60 transition-colors duration-300">
             <div class="flex items-center space-x-3">
@@ -751,6 +851,31 @@ const showCampus = ref(false);
 const searchQuery = ref('');
 const sortBy = ref('newest');
 
+function normalizeMaterialCategory(rawValue) {
+  const value = String(rawValue || '').toLowerCase().trim();
+  if (!value) return 'books';
+  if (
+    value.includes('book') ||
+    value.includes('fiction') ||
+    value.includes('novel') ||
+    value.includes('story') ||
+    value.includes('paper') ||
+    value.includes('reading')
+  ) {
+    return 'books';
+  }
+  if (value.includes('magazine')) {
+    return 'magazine';
+  }
+  if (value.includes('thesis') || value.includes('dissertation')) {
+    return 'thesis';
+  }
+  if (value.includes('research') || value.includes('report')) {
+    return 'research';
+  }
+  return 'books';
+}
+
 // Material Categories
 const materialCategories = [
   { value: 'books', label: 'Books', icon: '📚' },
@@ -767,7 +892,7 @@ const digitalReq = useApiRequest();
 
 function loadMaterials() {
   physicalReq.send(
-    () => getAllMaterials({ size: 50 }, 'physical'),
+    () => getAllMaterials({ size: 4 }, 'physical'),
     (res) => {
       const rowsData = res?.data?.result ?? res?.data?.results ?? res?.data?.content ?? res?.data;
       const rows = Array.isArray(rowsData) ? rowsData : [];
@@ -777,7 +902,7 @@ function loadMaterials() {
         title: r.title || 'Untitled',
         author: r.author || 'Unknown',
         description: r.description || 'No description available',
-        category: String(r.category || r.genre || 'books').toLowerCase(),
+        category: normalizeMaterialCategory(r.category || r.genre),
         type: 'physical',
         reviews: Number(r.ratings_count || r.comments_count || 0),
         rating: Number(r.average_rating || 0),
@@ -808,7 +933,7 @@ function loadMaterials() {
         title: r.title || 'Untitled',
         author: r.author || 'Unknown',
         description: r.description || 'No description available',
-        category: String(r.category || r.genre || 'books').toLowerCase(),
+        category: normalizeMaterialCategory(r.category || r.genre),
         type: 'digital',
         reviews: Number(r.ratings_count || r.comments_count || 0),
         rating: Number(r.average_rating || 0),

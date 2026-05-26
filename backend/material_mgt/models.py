@@ -27,6 +27,7 @@ class DigitalMaterial (models.Model):
     file = models.FileField(upload_to="digital_materials/")
     cover_image = models.ImageField(upload_to="material_covers/", null=True, blank=True)
     cover_generated_at = models.DateTimeField(null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
     library = models.ForeignKey(
         "backend.Library",
         on_delete=models.PROTECT,
@@ -98,6 +99,7 @@ class PhysicalMaterial (models.Model):
     location = models.CharField(max_length=20,choices=LOCATION,default='STACK')
     can_borrow  = models.BooleanField(default=True)
     image = models.ImageField(upload_to="material_images/", null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
     library = models.ForeignKey(
         "backend.Library",
         on_delete=models.PROTECT,

@@ -199,20 +199,26 @@ onMounted(() => {
 });
 
 function downloadReceipt(row) {
-  const payment = {
-    payment_intent_id: row?.payment_reference || row?.id || 'N/A',
-    payment_date: row?.return_date || new Date().toISOString(),
-    payment_method: 'Chapa Pay',
-    amount: amount(row?.fine_amount),
-    material_title: row?.material_title || row?.material || 'Library Fine Payment',
-    fee_type: 'Overdue Fine',
-    member_name: row?.member_name || row?.member || 'Library Patron',
-    member_id_number: row?.member_id_number || 'N/A',
-    library_name: row?.library_name || 'E-Book Library System'
-  };
-  
-  toasted(true, 'Generating PDF receipt...');
-  generatePaymentReceipt(payment);
+  try {
+    const payment = {
+      id: row?.id,
+      payment_intent_id: row?.payment_reference || row?.id || 'N/A',
+      payment_date: row?.return_date || new Date().toISOString(),
+      payment_method: 'Chapa Pay',
+      amount: amount(row?.fine_amount),
+      material_title: row?.material_title || row?.material || 'Library Fine Payment',
+      fee_type: 'Overdue Fine',
+      member_name: row?.member_name || row?.member || 'Library Patron',
+      member_id_number: row?.member_id_number || 'N/A',
+      library_name: row?.library_name || 'E-Book Library System',
+    };
+
+    generatePaymentReceipt(payment);
+    toasted(true, 'Receipt downloaded successfully');
+  } catch (error) {
+    console.error('Receipt download failed:', error);
+    toasted(false, 'Failed to generate receipt', error?.message || 'PDF error');
+  }
 }
 
 onBeforeUnmount(() => {
@@ -223,25 +229,39 @@ onBeforeUnmount(() => {
 <template>
   <div class="p-4 sm:p-7 space-y-6 dark:bg-slate-950 min-h-screen">
     <!-- Hero Section -->
-    <section class="rounded-[28px] border border-slate-200 dark:border-slate-800 bg-[radial-gradient(circle_at_top_right,_rgba(251,191,36,0.28),_transparent_36%),linear-gradient(145deg,_#111827,_#0f766e_58%,_#34d399)] dark:bg-[radial-gradient(circle_at_top_right,_rgba(251,191,36,0.3),_transparent_36%),linear-gradient(145deg,_#0f172a,_#0d9488_58%,_#059669)] p-6 text-white shadow-xl">
-      <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div class="max-w-2xl">
-          <p class="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-100/80 dark:text-emerald-200/80">Fine Payments</p>
-          <h1 class="mt-3 text-3xl font-bold tracking-tight">Settle overdue fines without leaving your workflow.</h1>
-          <p class="mt-3 text-sm text-emerald-50/85 dark:text-emerald-100/85">
-            Review your returned materials, see which fines are still pending, and complete payment through Chapa.
-          </p>
-        </div>
+ <section class="rounded-[28px] border border-slate-200 dark:border-slate-800 bg-[linear-gradient(135deg,_rgba(245,158,11,0.15),_rgba(239,68,68,0.1))] p-6 shadow-xl">
 
-        <button
-          class="inline-flex items-center gap-2 rounded-full bg-white/14 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/22 dark:bg-white/10 dark:hover:bg-white/20"
-          @click="loadReturns"
-        >
-          <BaseIcon :path="mdiRefresh" size="18" />
-          Refresh
-        </button>
-      </div>
-    </section>
+  <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    
+    <div class="max-w-2xl">
+
+      <!-- Small Top Text -->
+      <p class="text-xs font-semibold uppercase tracking-[0.32em] text-slate-500 dark:text-slate-400">
+        Fine Payments
+      </p>
+
+      <!-- Title -->
+      <h1 class="mt-3 text-3xl font-bold tracking-tight bg-gradient-to-r from-amber-500 to-yellow-400 bg-clip-text text-transparent">
+        Settle overdue fines without leaving your workflow.
+      </h1>
+
+      <!-- Description -->
+      <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">
+        Review your returned materials, see which fines are still pending, and complete payment through Chapa.
+      </p>
+    </div>
+
+    <!-- Refresh Button -->
+    <button
+      class="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-600 shadow-md"
+      @click="loadReturns"
+    >
+      <BaseIcon :path="mdiRefresh" size="18" />
+      Refresh
+    </button>
+
+  </div>
+</section>
 
     <!-- Stats Cards -->
     <section class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">

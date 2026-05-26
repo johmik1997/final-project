@@ -26,7 +26,39 @@ libraryReq.send(() => getAllLibrary({ page: 1, size: 200 }));
 const libraryOptions = computed(() => libraryReq.response.value?.libraries || libraryReq.response.value?.results || libraryReq.response.value || []);
 const showLibraryField = computed(() => Boolean(role.value) && !['MEMBER', 'SUPER ADMIN'].includes(role.value));
 const roleOptions = ['MEMBER', 'STACK STAFF', 'TECHNICAL STAFF', 'FRONT DESK STAFF', 'ADMIN', 'SUPER ADMIN'];
-
+const departments = [
+  'Biology',
+  'Chemistry',
+  'Physics',
+  'Mathematics',
+  'Statistics',
+  'Civil Engineering',
+  'Mechanical Engineering',
+  'Electrical & Computer Engineering',
+  'Software Engineering',
+  'Information Technology',
+  'Computer Science',
+  'Architecture',
+  'Agronomy',
+  'Animal Science',
+  'Plant Science',
+  'Nursing',
+  'Public Health',
+  'Medicine',
+  'Pharmacy',
+  'Economics',
+  'Sociology',
+  'Political Science',
+  'History',
+  'Geography',
+  'Law',
+  'Business Administration',
+  'Accounting & Finance',
+  'Management',
+  'Education',
+  'Journalism & Communication',
+  'Other'
+];
 // Submit handler
 function create({ values }) {
   if (values.role === 'MEMBER') {
@@ -43,7 +75,7 @@ function create({ values }) {
       if (res.success) {
         user.add(res.data);
         emitEntityMutation('users', { action: 'created', id: res.data?.id });
-        toasted(true, 'User Created');
+        toasted(true, 'User created. Login credentials were sent by email.');
         closeModal();
       } else {
         toasted(false, '', res.error);
@@ -105,8 +137,9 @@ function create({ values }) {
           :attributes="{ placeholder: 'Select Role',
             required
            }" /> -->
-           <Input v-if="role === 'MEMBER'" name="department" label="Department" validation="required"
-          :attributes="{ placeholder: 'Enter Department' }" />
+           <Select v-if="role === 'MEMBER'" name="department" label="Department" validation="required"
+          :options="departments"
+          :attributes="{ placeholder: 'Select Department' }" />
       </Form>
 
       <template #bottom>

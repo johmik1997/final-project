@@ -15,6 +15,40 @@ const props = defineProps({
   }
 })
 
+const departments = [
+  'Biology',
+  'Chemistry',
+  'Physics',
+  'Mathematics',
+  'Statistics',
+  'Civil Engineering',
+  'Mechanical Engineering',
+  'Electrical & Computer Engineering',
+  'Software Engineering',
+  'Information Technology',
+  'Computer Science',
+  'Architecture',
+  'Agronomy',
+  'Animal Science',
+  'Plant Science',
+  'Nursing',
+  'Public Health',
+  'Medicine',
+  'Pharmacy',
+  'Economics',
+  'Sociology',
+  'Political Science',
+  'History',
+  'Geography',
+  'Law',
+  'Business Administration',
+  'Accounting & Finance',
+  'Management',
+  'Education',
+  'Journalism & Communication',
+  'Other'
+];
+
 const role = ref('')
 const showLibraryField = computed(() => Boolean(role.value) && !['MEMBER', 'SUPER ADMIN'].includes(role.value))
 const roleOptions = [
@@ -111,13 +145,14 @@ watch(
       :options="['TEACHER','STUDENT']"
     />
 
-    <Input
+    <Select
       v-if="role === 'MEMBER'"
       name="department"
       label="Department"
       validation="required"
       :value="user?.department || ''"
-      :attributes="{ placeholder: 'Enter Department' }"
+      :options="departments"
+      :attributes="{ placeholder: 'Select Department' }"
     />
 
   </Form>

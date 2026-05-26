@@ -10,12 +10,14 @@ import { getAllReservation } from '@/features/reservation/api/reservationApi';
 import { getAllUser } from '@/features/users/Api/UserApi';
 import { getAllLibrary } from '@/features/library/api/libraryApi';
 import { getAllReturns } from '@/features/returns/api/returnApi';
+import { getAllTransferRequests } from '@/features/transfer/api/transferApi';
 import { getRecommendedMaterials } from '../api/recommendationApi';
 import { subscribeEntityMutation } from '@/utils/entitySync';
 import DashboardStatCard from '../components/DashboardStatCard.vue';
 import DashboardPanel from '../components/DashboardPanel.vue';
 import DashboardActivityBarChart from '../components/DashboardActivityBarChart.vue';
 import DashboardMaterialPieChart from '../components/DashboardMaterialPieChart.vue';
+import DashboardLibraryBarChart from '../components/DashboardLibraryBarChart.vue';
 import {
   mdiAccountGroup,
   mdiAlertCircle,
@@ -34,6 +36,9 @@ import {
   mdiShieldCrown,
   mdiStarFourPoints,
   mdiViewDashboard,
+  mdiFileChartOutline,
+  mdiSwapHorizontal,
+  mdiOfficeBuilding,
 } from '@mdi/js';
 
 const router = useRouter();
@@ -46,6 +51,7 @@ const reservationReq = useApiRequest();
 const usersReq = useApiRequest();
 const libraryReq = useApiRequest();
 const returnReq = useApiRequest();
+const transferReq = useApiRequest();
 const recommendationReq = useApiRequest();
 
 let unsubscribeEntitySync = () => {};
@@ -154,7 +160,13 @@ const currentRole = computed(() => normalizeRole(currentUser.value?.role || curr
 const isMember = computed(() => currentRole.value === 'MEMBER');
 const isStackStaff = computed(() => currentRole.value === 'STACK STAFF');
 const isTechnicalStaff = computed(() => currentRole.value === 'TECHNICAL STAFF');
-const isAdminLike = computed(() => ['ADMIN', 'SUPER ADMIN'].includes(currentRole.value));
+const isFrontDeskStaff = computed(() => currentRole.value === 'FRONT DESK STAFF');
+const isDepartmentHead = computed(() => currentRole.value === 'DEPARTMENT HEAD');
+const isSuperAdmin = computed(() => currentRole.value === 'SUPER ADMIN');
+const isAdmin = computed(() => currentRole.value === 'ADMIN');
+const isAdminLike = computed(() => isAdmin.value || isSuperAdmin.value);
+const currentDepartment = computed(() => String(currentUser.value?.department || '').trim());
+const currentLibraryName = computed(() => currentUser.value?.library_name || currentUser.value?.libraryName || '');
 
 const physicalMaterials = computed(() => rowsFromPayload(physicalReq.response.value));
 const digitalMaterials = computed(() => rowsFromPayload(digitalReq.response.value));
@@ -164,7 +176,31 @@ const reservations = computed(() => rowsFromPayload(reservationReq.response.valu
 const users = computed(() => rowsFromPayload(usersReq.response.value));
 const libraries = computed(() => rowsFromPayload(libraryReq.response.value));
 const returns = computed(() => rowsFromPayload(returnReq.response.value));
+const transfers = computed(() => rowsFromPayload(transferReq.response.value));
 const recommendations = computed(() => recommendationReq.response.value?.results || []);
+
+const shelfMaterials = computed(() =>
+  physicalMaterials.value.filter((row) => normalizeStatus(row?.location) === 'SHELF').length
+);
+const pendingTransfers = computed(() =>
+  transfers.value.filter((row) => normalizeStatus(row?.status) === 'PENDING').length
+);
+const departmentMembers = computed(() => {
+  if (!isDepartmentHead.value || !currentDepartment.value) return [];
+  const dept = currentDepartment.value.toLowerCase();
+  return users.value.filter(
+    (user) =>
+      normalizeRole(user?.role) === 'MEMBER' &&
+      String(user?.department || '').trim().toLowerCase() === dept
+  );
+});
+const departmentBorrows = computed(() => {
+  if (!isDepartmentHead.value || !currentDepartment.value) return [];
+  const dept = currentDepartment.value.toLowerCase();
+  return borrows.value.filter((row) =>
+    String(row?.member_department || row?.department || '').trim().toLowerCase() === dept
+  );
+});
 const recommendationStrategy = computed(() => recommendationReq.response.value?.strategy || 'popular');
 
 const availableMaterials = computed(() =>
@@ -249,6 +285,8 @@ const recentBorrows = computed(() => newestFirst(borrows.value, ['borrow_date', 
 const recentReturns = computed(() => newestFirst(returns.value, ['return_date', 'created_at']).slice(0, 5));
 const recentReservations = computed(() => newestFirst(reservations.value, ['reserve_date', 'created_at']).slice(0, 5));
 
+const reportsAction = { label: 'View reports', path: '/reports', icon: mdiFileChartOutline, tone: 'violet' };
+
 const quickActions = computed(() => {
   if (isMember.value) {
     return [
@@ -256,6 +294,7 @@ const quickActions = computed(() => {
       { label: 'My Borrows', path: '/my-borrows', icon: mdiBookshelf, tone: 'amber' },
       { label: 'My Reservations', path: '/reservations', icon: mdiClockOutline, tone: 'green' },
       { label: 'Fine Payments', path: '/fine-payments', icon: mdiCreditCardCheckOutline, tone: 'violet' },
+      reportsAction,
     ];
   }
 
@@ -264,7 +303,7 @@ const quickActions = computed(() => {
       { label: 'Issue Borrow', path: '/borrows/add', icon: mdiPlus, tone: 'blue' },
       { label: 'Process Returns', path: '/returns', icon: mdiKeyboardReturn, tone: 'green' },
       { label: 'Borrow Records', path: '/borrows', icon: mdiBookshelf, tone: 'amber' },
-      { label: 'Materials', path: '/material', icon: mdiBookOpenPageVariant, tone: 'violet' },
+      reportsAction,
     ];
   }
 
@@ -272,8 +311,43 @@ const quickActions = computed(() => {
     return [
       { label: 'Materials', path: '/material', icon: mdiBookOpenPageVariant, tone: 'blue' },
       { label: 'Add Material', path: '/material', icon: mdiPlus, tone: 'green' },
-      { label: 'Catalog Overview', path: '/dashboard', icon: mdiChartTimelineVariant, tone: 'amber' },
-      { label: 'Borrow Activity', path: '/borrows', icon: mdiBookshelf, tone: 'violet' },
+      reportsAction,
+      { label: 'Borrow Activity', path: '/borrows', icon: mdiBookshelf, tone: 'amber' },
+    ];
+  }
+
+  if (isFrontDeskStaff.value) {
+    return [
+      { label: 'Shelf Circulation', path: '/circulation', icon: mdiBookshelf, tone: 'blue' },
+      { label: 'Transfer Requests', path: '/transfer-requests', icon: mdiSwapHorizontal, tone: 'green' },
+      { label: 'Materials', path: '/material', icon: mdiBookOpenPageVariant, tone: 'amber' },
+      reportsAction,
+    ];
+  }
+
+  if (isDepartmentHead.value) {
+    return [
+      { label: 'Browse Materials', path: '/material', icon: mdiBookOpenPageVariant, tone: 'blue' },
+      reportsAction,
+      { label: 'Department members', path: '/reports', icon: mdiOfficeBuilding, tone: 'green' },
+    ];
+  }
+
+  if (isSuperAdmin.value) {
+    return [
+      { label: 'Users', path: '/users', icon: mdiAccountGroup, tone: 'blue' },
+      { label: 'Libraries', path: '/library', icon: mdiLibrary, tone: 'green' },
+      { label: 'Library Policy', path: '/library-policy', icon: mdiShieldCrown, tone: 'amber' },
+      reportsAction,
+    ];
+  }
+
+  if (isAdmin.value) {
+    return [
+      { label: 'Users', path: '/users', icon: mdiAccountGroup, tone: 'blue' },
+      { label: 'Returns', path: '/returns', icon: mdiKeyboardReturn, tone: 'green' },
+      { label: 'Materials', path: '/material', icon: mdiBookOpenPageVariant, tone: 'amber' },
+      reportsAction,
     ];
   }
 
@@ -281,7 +355,7 @@ const quickActions = computed(() => {
     { label: 'Users', path: '/users', icon: mdiAccountGroup, tone: 'blue' },
     { label: 'Libraries', path: '/library', icon: mdiLibrary, tone: 'green' },
     { label: 'Returns', path: '/returns', icon: mdiKeyboardReturn, tone: 'amber' },
-    { label: 'Materials', path: '/material', icon: mdiBookOpenPageVariant, tone: 'violet' },
+    reportsAction,
   ];
 });
 
@@ -289,6 +363,10 @@ const dashboardTitle = computed(() => {
   if (isMember.value) return 'Your reading journey, organized.';
   if (isStackStaff.value) return 'Circulation desk at a glance.';
   if (isTechnicalStaff.value) return 'Collection health and digital readiness.';
+  if (isFrontDeskStaff.value) return 'Shelf circulation and transfers.';
+  if (isDepartmentHead.value) return `Department overview: ${currentDepartment.value || 'your unit'}.`;
+  if (isSuperAdmin.value) return 'System-wide library operations.';
+  if (isAdmin.value) return `Branch dashboard${currentLibraryName.value ? `: ${currentLibraryName.value}` : ''}.`;
   return 'Operational visibility across the library system.';
 });
 
@@ -301,6 +379,18 @@ const dashboardSubtitle = computed(() => {
   }
   if (isTechnicalStaff.value) {
     return 'Monitor material availability, catalog coverage, and low-stock pressure without bouncing between pages.';
+  }
+  if (isFrontDeskStaff.value) {
+    return 'Shelf materials, circulation sessions, and transfer requests for your library branch.';
+  }
+  if (isDepartmentHead.value) {
+    return 'Monitor borrowing and reservations for members in your department.';
+  }
+  if (isSuperAdmin.value) {
+    return 'Compare libraries, members, circulation, and fines across the entire HU-DLRBS system.';
+  }
+  if (isAdmin.value) {
+    return 'Branch-scoped visibility into members, circulation, materials, and fine payments.';
   }
   return 'See the system-wide state of libraries, users, materials, circulation, and payments in a single dashboard.';
 });
@@ -405,6 +495,110 @@ const statCards = computed(() => {
     ];
   }
 
+  if (isFrontDeskStaff.value) {
+    return [
+      {
+        label: 'Shelf Materials',
+        value: shelfMaterials.value,
+        description: 'Physical items at SHELF location',
+        icon: mdiBookshelf,
+        tone: 'blue',
+      },
+      {
+        label: 'Active Borrows',
+        value: activeBorrows.value,
+        description: 'Currently checked out',
+        icon: mdiClockOutline,
+        tone: 'amber',
+      },
+      {
+        label: 'Pending Transfers',
+        value: pendingTransfers.value,
+        description: 'Awaiting fulfillment',
+        icon: mdiSwapHorizontal,
+        tone: 'green',
+      },
+      {
+        label: 'Unpaid Fines',
+        value: `ETB ${unpaidFineTotal.value.toFixed(2)}`,
+        description: 'Outstanding return fines',
+        icon: mdiCashMultiple,
+        tone: 'violet',
+      },
+    ];
+  }
+
+  if (isDepartmentHead.value) {
+    const activeDeptBorrows = departmentBorrows.value.filter(
+      (row) => ['BORROWED', 'OVERDUE'].includes(normalizeStatus(row?.status)) && !row?.is_returned
+    ).length;
+    return [
+      {
+        label: 'Department Members',
+        value: departmentMembers.value.length,
+        description: currentDepartment.value || 'Your department',
+        icon: mdiAccountGroup,
+        tone: 'blue',
+      },
+      {
+        label: 'Active Borrows',
+        value: activeDeptBorrows,
+        description: 'Currently out in your department',
+        icon: mdiBookshelf,
+        tone: 'amber',
+      },
+      {
+        label: 'Reservations',
+        value: reservations.value.filter((row) =>
+          departmentMembers.value.some((m) => sameId(m?.id, row?.member || row?.member_id))
+        ).length,
+        description: 'Holds by department members',
+        icon: mdiClockOutline,
+        tone: 'green',
+      },
+      {
+        label: 'Overdue',
+        value: departmentBorrows.value.filter((row) => normalizeStatus(row?.status) === 'OVERDUE').length,
+        description: 'Needs department follow-up',
+        icon: mdiAlertCircle,
+        tone: 'violet',
+      },
+    ];
+  }
+
+  if (isSuperAdmin.value) {
+    return [
+      {
+        label: 'Libraries',
+        value: libraries.value.length,
+        description: 'Configured branches',
+        icon: mdiLibrary,
+        tone: 'blue',
+      },
+      {
+        label: 'Members',
+        value: totalMembers.value,
+        description: 'System-wide patrons',
+        icon: mdiAccountGroup,
+        tone: 'green',
+      },
+      {
+        label: 'Active Borrows',
+        value: activeBorrows.value,
+        description: 'Across all branches',
+        icon: mdiClockOutline,
+        tone: 'amber',
+      },
+      {
+        label: 'Unpaid Fines',
+        value: `ETB ${unpaidFineTotal.value.toFixed(2)}`,
+        description: 'System-wide outstanding',
+        icon: mdiShieldCrown,
+        tone: 'violet',
+      },
+    ];
+  }
+
   return [
     {
       label: 'Members',
@@ -479,6 +673,12 @@ function loadDashboard() {
   libraryReq.send(() => getAllLibrary({ page: 1, size: 200 }));
   returnReq.send(() => getAllReturns({ page: 1, size: 200 }));
 
+  if (isFrontDeskStaff.value || isAdminLike.value || isStackStaff.value) {
+    transferReq.send(() => getAllTransferRequests({ page: 1, size: 100 }));
+  } else {
+    transferReq.response.value = [];
+  }
+
   if (isMember.value) {
     recommendationReq.send(() => getRecommendedMaterials({ limit: 6, type: 'all' }));
   } else {
@@ -515,9 +715,9 @@ onBeforeUnmount(() => {
             <BaseIcon :path="mdiRefresh" size="18" />
             Refresh
           </button>
-          <button class="btn-primary" @click="router.push('/material')">
+          <button class="btn-primary" @click="router.push(isMember ? '/material' : '/reports')">
             <BaseIcon :path="mdiArrowRight" size="18" />
-            Open materials
+            {{ isMember ? 'Open materials' : 'Open reports' }}
           </button>
         </div>
       </div>
@@ -570,6 +770,16 @@ onBeforeUnmount(() => {
           />
         </DashboardPanel>
       </div>
+    </div>
+
+    <div v-if="isSuperAdmin && libraries.length" class="charts-grid charts-grid-single">
+      <DashboardPanel title="Library branch comparison" subtitle="Members and active borrows across all branches">
+        <DashboardLibraryBarChart
+          :libraries="libraries"
+          :members="users.filter((u) => normalizeRole(u?.role) === 'MEMBER')"
+          :borrows="borrows"
+        />
+      </DashboardPanel>
     </div>
 
     <!-- Quick Actions & Recommendations Row -->
@@ -637,8 +847,51 @@ onBeforeUnmount(() => {
 
       <!-- Operational Watchlist for Staff/Admin -->
       <div v-else class="actions-main">
-        <DashboardPanel title="Operational watchlist" subtitle="What needs attention first">
-          <div class="watchlist-grid">
+        <DashboardPanel
+          :title="isDepartmentHead ? 'Department watchlist' : isFrontDeskStaff ? 'Shelf desk watchlist' : 'Operational watchlist'"
+          :subtitle="isDepartmentHead ? 'Activity for members in your department' : isFrontDeskStaff ? 'Shelf circulation and transfers' : 'What needs attention first'"
+        >
+          <div v-if="isDepartmentHead" class="watchlist-grid">
+            <div class="watchlist-card">
+              <p class="watchlist-title">Department</p>
+              <div class="watchlist-stats">
+                <div class="watchlist-stat">
+                  <span class="stat-label">Members</span>
+                  <span class="stat-value">{{ departmentMembers.length }}</span>
+                </div>
+                <div class="watchlist-stat">
+                  <span class="stat-label">Active borrows</span>
+                  <span class="stat-value">{{ departmentBorrows.filter((r) => !r?.is_returned).length }}</span>
+                </div>
+                <div class="watchlist-stat">
+                  <span class="stat-label">Overdue</span>
+                  <span class="stat-value overdue">{{ departmentBorrows.filter((r) => normalizeStatus(r?.status) === 'OVERDUE').length }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-else-if="isFrontDeskStaff" class="watchlist-grid">
+            <div class="watchlist-card">
+              <p class="watchlist-title">Shelf desk</p>
+              <div class="watchlist-stats">
+                <div class="watchlist-stat">
+                  <span class="stat-label">Shelf materials</span>
+                  <span class="stat-value">{{ shelfMaterials }}</span>
+                </div>
+                <div class="watchlist-stat">
+                  <span class="stat-label">Pending transfers</span>
+                  <span class="stat-value">{{ pendingTransfers }}</span>
+                </div>
+                <div class="watchlist-stat">
+                  <span class="stat-label">Overdue borrows</span>
+                  <span class="stat-value overdue">{{ overdueBorrows }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="watchlist-grid">
             <div class="watchlist-card">
               <p class="watchlist-title">Circulation</p>
               <div class="watchlist-stats">
@@ -1030,6 +1283,10 @@ onBeforeUnmount(() => {
   .charts-grid {
     grid-template-columns: 2fr 1fr;
   }
+}
+
+.charts-grid-single {
+  grid-template-columns: 1fr;
 }
 
 .charts-main,

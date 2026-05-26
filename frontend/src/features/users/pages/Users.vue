@@ -64,8 +64,9 @@ function getPhone(user) {
 }
 
 function getFullName(user) {
-  const first = user?.first_name || user?.firstName || '';
-  const last = user?.last_name || user?.lastName || user?.fatherName || '';
+  const first = user?.first_name;
+  const last = user?.last_name;
+  console.log(first)
   return [first, last].filter(Boolean).join(' ');
 }
 
@@ -331,7 +332,7 @@ function verifyUserCode(phone, code) {
       'Actions'
     ],
     row: [
-      'fullname',
+      'first_name',
       'id_number',
       'email',
       'phone',

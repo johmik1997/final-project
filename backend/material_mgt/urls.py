@@ -12,6 +12,7 @@ from .views import (
     PhysicalMaterialViewSet,
     MaterialTransferRequestViewSet,
     BarcodeImageAPIView,
+    MaterialBarcodeLookupAPIView,
     PhysicalMaterialXLSImportAPIView,
 )
 
@@ -27,6 +28,7 @@ urlpatterns = [
     path("assistant-chat/", LibraryAssistantChatAPIView.as_view(), name="library-assistant-chat"),
     path("generate-description/", GenerateMaterialDescriptionAPIView.as_view(), name="generate-material-description"),
     path("interactions/stats/", MaterialInteractionStatsAPIView.as_view(), name="material-interaction-stats"),
+    path("lookup-barcode/", MaterialBarcodeLookupAPIView.as_view(), name="material-barcode-lookup"),
     path("barcode/<uuid:pk>/", BarcodeImageAPIView.as_view(), name="barcode-image"),
     path("physical-materials/import-xls/", PhysicalMaterialXLSImportAPIView.as_view(), name="physical-material-import-xls"),
     path("", include(router.urls)),
