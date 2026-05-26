@@ -167,6 +167,14 @@ def _normalize_isbn_digits(code: str) -> str:
     digits = re.sub(r"\D", "", str(code or ""))
     if len(digits) in (10, 13):
         return digits
+    # Some scanners return UPC/EAN payloads with extra prefix/suffix digits.
+    match = re.search(r"(97[89]\d{10})", digits)
+    if match:
+        return match.group(1)
+    if len(digits) > 13:
+        tail = digits[-13:]
+        if tail.startswith(("978", "979")):
+            return tail
     return ""
 
 
@@ -231,6 +239,10 @@ def _extract_people_names(raw_value):
     return str(raw_value or "").strip()
 
 
+_BROWSER_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+_OL_HEADERS = {"User-Agent": _BROWSER_UA, "Accept": "application/json"}
+
+
 def _build_external_lookup_payload(*, source, isbn, title="", author="", genre="OTHER", published_date="", language="", publisher="", description=""):
     title = str(title or "").strip()
     if _is_invalid_book_title(title):
@@ -263,8 +275,9 @@ def _lookup_open_library_isbn_json(isbn: str):
     try:
         response = requests.get(
             f"https://openlibrary.org/isbn/{isbn}.json",
-            headers={"User-Agent": "EbookLibrary/1.0 (metadata-lookup)"},
+            headers=_OL_HEADERS,
             timeout=8,
+            allow_redirects=True,
         )
         if response.status_code == 404:
             return {"found": False, "source": "openlibrary", "data": {"isbn": isbn}}
@@ -278,8 +291,9 @@ def _lookup_open_library_isbn_json(isbn: str):
         for author_key in author_keys[:3]:
             author_response = requests.get(
                 f"https://openlibrary.org{author_key}.json",
-                headers={"User-Agent": "EbookLibrary/1.0 (metadata-lookup)"},
+                headers=_OL_HEADERS,
                 timeout=6,
+                allow_redirects=True,
             )
             if author_response.ok:
                 author_payload = author_response.json() or {}
@@ -317,8 +331,9 @@ def _lookup_open_library_search_metadata(isbn: str):
         response = requests.get(
             "https://openlibrary.org/search.json",
             params={"isbn": isbn, "limit": 1},
-            headers={"User-Agent": "EbookLibrary/1.0 (metadata-lookup)"},
+            headers=_OL_HEADERS,
             timeout=8,
+            allow_redirects=True,
         )
         response.raise_for_status()
         payload = response.json() or {}
@@ -351,10 +366,14 @@ def _lookup_open_library_search_metadata(isbn: str):
 
 def _lookup_google_books_metadata(isbn: str):
     try:
+        api_key = os.getenv("GOOGLE_BOOKS_API_KEY", "").strip()
+        params: dict = {"q": f"isbn:{isbn}", "maxResults": 1}
+        if api_key:
+            params["key"] = api_key
         response = requests.get(
             "https://www.googleapis.com/books/v1/volumes",
-            params={"q": f"isbn:{isbn}", "maxResults": 1},
-            headers={"User-Agent": "EbookLibrary/1.0 (metadata-lookup)"},
+            params=params,
+            headers={"User-Agent": _BROWSER_UA},
             timeout=8,
         )
         response.raise_for_status()
@@ -413,6 +432,14 @@ def _is_invalid_book_title(value: str) -> bool:
 
 def _lookup_external_isbn_metadata(isbn: str):
     """Resolve ISBN metadata using trusted public APIs only (no HTML scraping)."""
+    google_result = _lookup_google_books_metadata(isbn)
+    if google_result.get("found"):
+        return google_result
+
+    search_result = _lookup_open_library_search_metadata(isbn)
+    if search_result.get("found"):
+        return search_result
+
     isbn_json_result = _lookup_open_library_isbn_json(isbn)
     if isbn_json_result.get("found"):
         return isbn_json_result
@@ -421,8 +448,9 @@ def _lookup_external_isbn_metadata(isbn: str):
         response = requests.get(
             "https://openlibrary.org/api/books",
             params={"bibkeys": f"ISBN:{isbn}", "format": "json", "jscmd": "data"},
-            headers={"User-Agent": "EbookLibrary/1.0 (metadata-lookup)"},
+            headers=_OL_HEADERS,
             timeout=8,
+            allow_redirects=True,
         )
         response.raise_for_status()
         payload = response.json() or {}
@@ -460,14 +488,6 @@ def _lookup_external_isbn_metadata(isbn: str):
                 return result
     except Exception:
         logger.exception("Open Library books API lookup failed for ISBN %s", isbn)
-
-    search_result = _lookup_open_library_search_metadata(isbn)
-    if search_result.get("found"):
-        return search_result
-
-    google_result = _lookup_google_books_metadata(isbn)
-    if google_result.get("found"):
-        return google_result
 
     return {"found": False, "source": None, "data": {"isbn": isbn}}
 

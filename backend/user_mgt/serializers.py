@@ -1,12 +1,8 @@
 import secrets
 import time
-import threading
 from django.conf import settings
 from django.core.cache import cache
-from django.core.mail import send_mail
 from django.db import transaction
-from django.template.loader import render_to_string
-from django.core.mail import EmailMultiAlternatives
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
@@ -17,6 +13,7 @@ from material_mgt.cache import invalidate_library_caches
 from transactions.models import Borrow, Reservation
 from .access import get_user_library, is_super_admin, normalize_role
 from .member_access import validate_campus_student_registration, validate_member_account
+from .email_utils import send_templated_user_email, send_templated_user_email_background
 from .models import CampusStudent, Library, LibraryPolicy, Notification, User
 
 # --- Helper Functions ---
@@ -214,25 +211,21 @@ class UserCreateSerializer(serializers.ModelSerializer):
         return attrs
 
     def _send_account_created_email(self, user, password):
-        login_url = getattr(settings, "PASSWORD_RESET_FRONTEND_URL", "http://localhost:5173/login")
-        context = {
-            "first_name": user.first_name or user.id_number,
-            "id_number": user.id_number,
-            "email": user.email,
-            "password": password,
-            "login_url": login_url,
-        }
-        subject = render_to_string("emails/account_created_subject.txt", context).strip()
-        body_text = render_to_string("emails/account_created.txt", context)
-        body_html = render_to_string("emails/account_created.html", context)
-        message = EmailMultiAlternatives(
-            subject=subject,
-            body=body_text,
-            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-            to=[user.email],
+        email = (user.email or "").strip()
+        if not email:
+            return
+        login_url = getattr(settings, "FRONTEND_LOGIN_URL", "http://localhost:5173/login")
+        send_templated_user_email_background(
+            template_base="account_created",
+            context={
+                "first_name": user.first_name or user.id_number,
+                "id_number": user.id_number,
+                "email": email,
+                "password": password,
+                "login_url": login_url,
+            },
+            recipients=[email],
         )
-        message.attach_alternative(body_html, "text/html")
-        message.send(fail_silently=False)
 
     def create(self, validated_data):
         password = validated_data.pop("password")
@@ -262,13 +255,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
             user.must_change_password = True
             user.save()
 
-        def _email_runner():
-            try:
-                self._send_account_created_email(user, password)
-            except Exception:
-                pass
-
-        threading.Thread(target=_email_runner, daemon=True).start()
+        self._send_account_created_email(user, password)
         invalidate_library_caches()
         return user
 
@@ -329,12 +316,13 @@ class ForgotPasswordSerializer(serializers.Serializer):
         otp = f"{secrets.randbelow(1_000_000):06d}"
         cache.set(cache_key, {"otp": otp, "attempts": 0, "expires_at": now_ts + ttl_seconds, "last_sent": now_ts}, timeout=ttl_seconds + 60)
 
-        send_mail(
-            subject="Password Reset OTP",
-            message=f"Your password reset code is: {otp}\nExpires in {ttl_seconds // 60} minutes.",
-            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-            recipient_list=[user.email],
-            fail_silently=False,
+        send_templated_user_email(
+            template_base="password_reset_otp",
+            context={
+                "otp": otp,
+                "expiry_minutes": max(1, ttl_seconds // 60),
+            },
+            recipients=[user.email],
         )
 
 
@@ -505,6 +493,20 @@ class StudentSelfRegisterSerializer(serializers.Serializer):
                 library=None,
                 id_expiry_date=campus.id_expiry_date,
                 must_change_password=False,
+            )
+        email = (user.email or "").strip()
+        if email:
+            login_url = getattr(settings, "FRONTEND_LOGIN_URL", "http://localhost:5173/login")
+            send_templated_user_email_background(
+                template_base="account_created",
+                context={
+                    "first_name": user.first_name or user.id_number,
+                    "id_number": user.id_number,
+                    "email": email,
+                    "password": "(the password you chose during registration)",
+                    "login_url": login_url,
+                },
+                recipients=[email],
             )
         invalidate_library_caches()
         return user

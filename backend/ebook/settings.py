@@ -113,18 +113,26 @@ DATABASES = {
     }
 }
 
-REDIS_CACHE_URL = os.getenv("REDIS_CACHE_URL", "redis://127.0.0.1:6379/1")
+REDIS_CACHE_URL = os.getenv("REDIS_CACHE_URL", "").strip()
 
-CACHES = {
-    "default": {
-        "BACKEND": os.getenv(
-            "DJANGO_CACHE_BACKEND",
-            "django.core.cache.backends.redis.RedisCache",
-        ),
-        "LOCATION": os.getenv("DJANGO_CACHE_LOCATION", REDIS_CACHE_URL),
-        "TIMEOUT": int(os.getenv("DJANGO_CACHE_TIMEOUT", "300")),
+if REDIS_CACHE_URL:
+    CACHES = {
+        "default": {
+            "BACKEND": os.getenv(
+                "DJANGO_CACHE_BACKEND",
+                "django.core.cache.backends.redis.RedisCache",
+            ),
+            "LOCATION": os.getenv("DJANGO_CACHE_LOCATION", REDIS_CACHE_URL),
+            "TIMEOUT": int(os.getenv("DJANGO_CACHE_TIMEOUT", "300")),
+        }
     }
-}
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "ebook-local-cache",
+        }
+    }
 
 API_RESPONSE_CACHE_TTL = int(os.getenv("API_RESPONSE_CACHE_TTL", "120"))
 BARCODE_LOOKUP_CACHE_TTL = int(os.getenv("BARCODE_LOOKUP_CACHE_TTL", "86400"))
@@ -237,10 +245,15 @@ CHAPA_CURRENCY = os.getenv("CHAPA_CURRENCY", "ETB")
 CHAPA_CALLBACK_URL = os.getenv("CHAPA_CALLBACK_URL", "")
 CHAPA_RETURN_URL = os.getenv("CHAPA_RETURN_URL", "")
 
+FRONTEND_LOGIN_URL = os.getenv("FRONTEND_LOGIN_URL", "http://localhost:5173/login")
 PASSWORD_RESET_FRONTEND_URL = os.getenv(
     "PASSWORD_RESET_FRONTEND_URL",
     "http://localhost:5173/reset-password",
 )
+PASSWORD_RESET_OTP_TTL_SECONDS = int(os.getenv("PASSWORD_RESET_OTP_TTL_SECONDS", "600"))
+PASSWORD_RESET_OTP_RESEND_SECONDS = int(os.getenv("PASSWORD_RESET_OTP_RESEND_SECONDS", "60"))
+PASSWORD_RESET_OTP_MAX_ATTEMPTS = int(os.getenv("PASSWORD_RESET_OTP_MAX_ATTEMPTS", "5"))
+PASSWORD_RESET_CONFIRM_TTL_SECONDS = int(os.getenv("PASSWORD_RESET_CONFIRM_TTL_SECONDS", "600"))
 
 from datetime import timedelta
 

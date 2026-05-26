@@ -387,8 +387,7 @@ class ReturnSerializer(serializers.ModelSerializer):
         # If fine exists, payment verification will finalize the return.
         if return_record.fine_amount <= 0:
             finalize_return_for_borrow(borrow)
-
-        transaction.on_commit(lambda: notify_return_success(borrow, return_record))
+            transaction.on_commit(lambda: notify_return_success(borrow, return_record))
         return return_record
 
 

@@ -157,7 +157,8 @@ class DigitalMaterialSerializer(MaterialFeedbackStatsMixin, serializers.ModelSer
         fields = [
             "id", "title", "author", "category", "genre", "published_date",
             "department", "language", "isbn", "format", "file_size", "file",
-            "cover_image", "cover_generated_at", "description", "library", "library_name",
+            "cover_image", "cover_generated_at", "description", "allow_downloadable",
+            "library", "library_name",
             "created_by", "created_by_name", "cover_image_url",
             "average_rating", "ratings_count", "comments_count", "recent_feedbacks",
             "my_rating", "my_comment", "my_feedback_id"

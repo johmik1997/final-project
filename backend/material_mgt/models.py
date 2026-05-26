@@ -28,6 +28,7 @@ class DigitalMaterial (models.Model):
     cover_image = models.ImageField(upload_to="material_covers/", null=True, blank=True)
     cover_generated_at = models.DateTimeField(null=True, blank=True)
     description = models.TextField(null=True, blank=True)
+    allow_downloadable = models.BooleanField(default=True)
     library = models.ForeignKey(
         "backend.Library",
         on_delete=models.PROTECT,
@@ -304,6 +305,38 @@ class MaterialBookmark(models.Model):
             ),
         ]
     
+class DigitalMaterialAccessLog(models.Model):
+    EVENT_VIEW = 'VIEW'
+    EVENT_DOWNLOAD = 'DOWNLOAD'
+    EVENT_CHOICES = [(EVENT_VIEW, 'View'), (EVENT_DOWNLOAD, 'Download')]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    material = models.ForeignKey(
+        DigitalMaterial,
+        on_delete=models.CASCADE,
+        related_name='access_logs',
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='digital_access_logs',
+    )
+    event = models.CharField(max_length=10, choices=EVENT_CHOICES)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['material', 'event', 'timestamp']),
+            models.Index(fields=['user', 'timestamp']),
+        ]
+
+    def __str__(self):
+        return f"{self.event} – {self.material_id} by {self.user_id} at {self.timestamp}"
+
+
 class MaterialTransferRequest(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     material = models.ForeignKey(

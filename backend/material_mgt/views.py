@@ -29,6 +29,7 @@ from user_mgt.access import (
 from .models import (
     PhysicalMaterial,
     DigitalMaterial,
+    DigitalMaterialAccessLog,
     MaterialFeedback,
     MaterialFavorite,
     MaterialBookmark,
@@ -1027,6 +1028,107 @@ class MobileScanSessionSubmitAPIView(APIView):
         }
         cache.set(_mobile_scan_session_cache_key(session_id), next_payload, ttl_seconds)
         return Response(next_payload, status=status.HTTP_200_OK)
+
+
+def _get_client_ip(request):
+    x_forwarded = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded:
+        return x_forwarded.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR')
+
+
+class DigitalMaterialStreamAPIView(APIView):
+    """Secure view-only stream. Logs VIEW event. Strips download headers for DRM materials."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        material = DigitalMaterial.objects.filter(pk=pk).first()
+        if not material:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if not _user_can_access_material(request.user, material):
+            return Response({'detail': 'Access denied.'}, status=status.HTTP_403_FORBIDDEN)
+        if not material.file:
+            return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
+
+        DigitalMaterialAccessLog.objects.create(
+            material=material,
+            user=request.user,
+            event=DigitalMaterialAccessLog.EVENT_VIEW,
+            ip_address=_get_client_ip(request),
+        )
+
+        file_path = material.file.path
+        _, ext = os.path.splitext(file_path)
+        content_type = 'application/pdf' if ext.lower() == '.pdf' else 'application/octet-stream'
+
+        response = HttpResponse(open(file_path, 'rb'), content_type=content_type)
+        # Always inline — never trigger browser save dialog
+        response['Content-Disposition'] = f'inline; filename="{os.path.basename(file_path)}"'
+        response['Content-Length'] = os.path.getsize(file_path)
+        # DRM: block caching and downstream saving for non-downloadable materials
+        if not material.allow_downloadable:
+            response['Cache-Control'] = 'no-store, no-cache, must-revalidate, private'
+            response['Pragma'] = 'no-cache'
+            response['X-Content-Type-Options'] = 'nosniff'
+        return response
+
+
+class DigitalMaterialDownloadAPIView(APIView):
+    """Download endpoint. Only works when allow_downloadable=True. Logs DOWNLOAD event."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        material = DigitalMaterial.objects.filter(pk=pk).first()
+        if not material:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if not _user_can_access_material(request.user, material):
+            return Response({'detail': 'Access denied.'}, status=status.HTTP_403_FORBIDDEN)
+        if not material.allow_downloadable:
+            return Response({'detail': 'Download is not permitted for this material.'}, status=status.HTTP_403_FORBIDDEN)
+        if not material.file:
+            return Response({'detail': 'No file attached.'}, status=status.HTTP_404_NOT_FOUND)
+
+        DigitalMaterialAccessLog.objects.create(
+            material=material,
+            user=request.user,
+            event=DigitalMaterialAccessLog.EVENT_DOWNLOAD,
+            ip_address=_get_client_ip(request),
+        )
+
+        file_path = material.file.path
+        _, ext = os.path.splitext(file_path)
+        content_type = 'application/pdf' if ext.lower() == '.pdf' else 'application/octet-stream'
+        filename = f"{material.title}{ext}"
+
+        response = HttpResponse(open(file_path, 'rb'), content_type=content_type)
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        response['Content-Length'] = os.path.getsize(file_path)
+        return response
+
+
+class DigitalMaterialAccessLogAPIView(APIView):
+    """Staff-only: list access logs for a digital material."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        staff_roles = {'STACKSTAFF', 'TECHNICALSTAFF', 'FRONTDESKSTAFF', 'ADMIN', 'SUPERADMIN'}
+        from user_mgt.access import normalize_role
+        if normalize_role(getattr(request.user, 'role', None)) not in staff_roles:
+            return Response({'detail': 'Staff access only.'}, status=status.HTTP_403_FORBIDDEN)
+
+        logs = DigitalMaterialAccessLog.objects.filter(material_id=pk).select_related('user').order_by('-timestamp')[:200]
+        data = [
+            {
+                'id': str(log.id),
+                'user_id': str(log.user_id) if log.user_id else None,
+                'user_name': f"{log.user.first_name} {log.user.last_name}".strip() if log.user else None,
+                'event': log.event,
+                'timestamp': log.timestamp.isoformat(),
+                'ip_address': log.ip_address,
+            }
+            for log in logs
+        ]
+        return Response({'material_id': str(pk), 'logs': data})
 
 
 import barcode

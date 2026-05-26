@@ -3,6 +3,9 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     DigitalMaterialViewSet,
+    DigitalMaterialStreamAPIView,
+    DigitalMaterialDownloadAPIView,
+    DigitalMaterialAccessLogAPIView,
     GenerateMaterialDescriptionAPIView,
     LibraryAssistantChatAPIView,
     MaterialBookmarkViewSet,
@@ -28,6 +31,9 @@ router.register("bookmarks", MaterialBookmarkViewSet, basename="material-bookmar
 router.register("transfer-requests", MaterialTransferRequestViewSet, basename="transfer-request")
 
 urlpatterns = [
+    path('digital-materials/<uuid:pk>/stream/', DigitalMaterialStreamAPIView.as_view(), name='digital-material-stream'),
+    path('digital-materials/<uuid:pk>/download/', DigitalMaterialDownloadAPIView.as_view(), name='digital-material-download'),
+    path('digital-materials/<uuid:pk>/access-logs/', DigitalMaterialAccessLogAPIView.as_view(), name='digital-material-access-logs'),
     path("assistant-chat/", LibraryAssistantChatAPIView.as_view(), name="library-assistant-chat"),
     path("generate-description/", GenerateMaterialDescriptionAPIView.as_view(), name="generate-material-description"),
     path("interactions/stats/", MaterialInteractionStatsAPIView.as_view(), name="material-interaction-stats"),

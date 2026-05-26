@@ -213,11 +213,12 @@ def notify_borrow_success(borrow):
 def notify_return_success(borrow, return_record):
     try:
         from user_mgt.models import Notification
-        fine_str = f" Fine: ${return_record.fine_amount}." if return_record.fine_amount else ""
+        fine_amount = getattr(return_record, 'fine_amount', None)
+        fine_str = f" Fine paid: ETB {fine_amount}." if fine_amount else ""
         Notification.objects.create(
             member_id=borrow.member,
             borrow_id=borrow,
-            message=f"You successfully returned '{borrow.material.title}'.{fine_str}",
+            message=f"You successfully returned '{borrow.material.title}'.{fine_str} Return is now complete.",
             status='UNREAD'
         )
     except Exception as e:
@@ -227,12 +228,13 @@ def notify_return_success(borrow, return_record):
     if not member_email:
         return
     member_name = (borrow.member.first_name or borrow.member.id_number).strip()
+    fine_amount = getattr(return_record, 'fine_amount', 0) or 0
     send_templated_email_background(
         template_name="return_success",
         context={
             "member_name": member_name,
             "material_title": borrow.material.title,
-            "fine_amount": return_record.fine_amount,
+            "fine_amount": fine_amount,
         },
         recipients=[member_email],
     )

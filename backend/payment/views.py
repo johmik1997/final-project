@@ -14,7 +14,7 @@ from rest_framework.views import APIView
 
 from .models import Payment
 from .serializers import ChapaInitPaymentSerializer, PaymentSerializer
-from transactions.services import finalize_return_for_borrow
+from transactions.services import finalize_return_for_borrow, notify_return_success
 
 def _norm_role(role):
     return "".join(str(role or "").upper().split())
@@ -161,7 +161,10 @@ class ChapaVerifyPaymentView(APIView):
         payment.save(update_fields=["status"])
 
         if payment.status == "COMPLETED":
-            finalize_return_for_borrow(payment.return_id.borrow)
+            return_obj = payment.return_id
+            borrow = return_obj.borrow
+            finalize_return_for_borrow(borrow)
+            transaction.on_commit(lambda: notify_return_success(borrow, return_obj))
 
         return Response({
             "payment": PaymentSerializer(payment).data,
