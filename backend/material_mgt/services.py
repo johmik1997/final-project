@@ -9,6 +9,12 @@ from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.translation import gettext as _
+import os
+
+try:
+    from google import genai
+except Exception:  # pragma: no cover - optional dependency guard
+    genai = None
 
 logger = logging.getLogger(__name__)
 
@@ -106,3 +112,50 @@ def generate_pdf_cover_image(digital_material):
     except Exception:
         logger.exception("Failed generating cover image for digital material %s", digital_material.pk)
         return False
+
+
+def generate_material_description(title: str, author: str, max_output_tokens: int = 220):
+    """Generate a concise catalog description for a material using configured Gemini models.
+
+    Returns (description_text, used_model) on success, or (None, None) on failure.
+    """
+    title = str(title or "").strip()
+    author = str(author or "").strip()
+
+    if not title or not author:
+        return None, None
+
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key or genai is None:
+        return None, None
+
+    models_to_try = [
+        os.getenv("GEMINI_DESCRIPTION_MODEL", "gemini-2.0-flash").strip() or "gemini-2.0-flash",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash-lite",
+        "gemini-1.5-pro",
+    ]
+
+    prompt = (
+        f"Title: {title}\n"
+        f"Author: {author}\n\n"
+        "Write a concise, helpful library catalog description (80-130 words). "
+        "Use clear, neutral language and avoid inventing specific facts."
+    )
+
+    try:
+        client = genai.Client(api_key=api_key)
+    except Exception:
+        return None, None
+
+    for model in models_to_try:
+        try:
+            response = client.models.generate_content(model=model, contents=prompt)
+            text = response.text.strip() if getattr(response, "text", None) else ""
+            if text:
+                return text, model
+        except Exception:
+            logger.exception("Material description generation failed for model %s", model)
+            continue
+
+    return None, None

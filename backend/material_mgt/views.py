@@ -1,5 +1,6 @@
 import os
 import requests
+import logging
 from uuid import UUID
 from django.utils import timezone
 from django.db.models import Avg, Count, Prefetch, Q
@@ -15,11 +16,7 @@ from rest_framework.permissions import BasePermission, IsAuthenticated, SAFE_MET
 from rest_framework.decorators import action
 from rest_framework import filters
 from django_filters.rest_framework import DjangoFilterBackend
-try:
-    from google.generativeai import configure as gemini_configure, GenerativeModel
-except Exception:
-    gemini_configure = None
-    GenerativeModel = None
+from google import genai
 
 from user_mgt.access import (
     get_user_library,
@@ -44,30 +41,49 @@ from .serializers import (
     MaterialTransferRequestSerializer,
 )
 from transactions.models import Borrow, Reservation
+from .services import generate_material_description
 
-def _get_gemini_model(env_name: str, default: str = "gemini-1.5-flash") -> str:
+logger = logging.getLogger(__name__)
+
+def _get_gemini_model(env_name: str, default: str = "gemini-2.0-flash") -> str:
     return os.getenv(env_name, default).strip() or default
 
+
 def _request_gemini_text(*, model: str, prompt: str, max_output_tokens: int = 400):
-    if gemini_configure is None or GenerativeModel is None:
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+
+    if not api_key:
         return {
             "success": False,
             "status": status.HTTP_503_SERVICE_UNAVAILABLE,
-            "error": "Google Generative AI SDK not installed. Install with: pip install google-generativeai",
+            "error": "Gemini API key not configured.",
             "text": "",
         }
-    api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    if not api_key:
-        return {"success": False, "status": status.HTTP_503_SERVICE_UNAVAILABLE, "error": "Gemini API key not configured.", "text": ""}
-    try:
-        gemini_configure(api_key=api_key)
-        gen_model = GenerativeModel(model_name=model)
-        response = gen_model.generate_content(prompt, generation_config={"max_output_tokens": max_output_tokens})
-        text = response.text.strip() if hasattr(response, "text") else str(response).strip()
-        return {"success": True, "status": status.HTTP_200_OK, "error": "", "text": text}
-    except Exception as e:
-        return {"success": False, "status": status.HTTP_502_BAD_GATEWAY, "error": str(e), "text": ""}
 
+    try:
+        client = genai.Client(api_key=api_key)
+
+        response = client.models.generate_content(
+            model=model,
+            contents=prompt,
+        )
+
+        text = response.text.strip() if response.text else ""
+
+        return {
+            "success": True,
+            "status": status.HTTP_200_OK,
+            "error": "",
+            "text": text,
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "status": status.HTTP_502_BAD_GATEWAY,
+            "error": str(e),
+            "text": "",
+        }
 
 def _parse_bool(value, default=False):
     if value is None:
@@ -151,6 +167,10 @@ class PhysicalMaterialViewSet(ModelViewSet):
                 queryset = queryset.filter(location="SHELF")
             elif role == "STACKSTAFF":
                 queryset = queryset.filter(location="STACK")
+            elif role in {"TECHNICALSTAFF", "ADMIN", "SUPERADMIN", "DEPARTMENTHEAD"}:
+                pass
+            elif role == "MEMBER":
+                queryset = queryset.exclude(location__in=["SHELF", "STACK"])
             elif self.request.user.is_authenticated:
                 queryset = queryset.exclude(location__in=["SHELF", "STACK"])
             # Anonymous users can browse available materials without library restriction.
@@ -187,6 +207,17 @@ class PhysicalMaterialViewSet(ModelViewSet):
             available_copies=available_copies,
             library=data.get("library") if is_super_admin(request.user) else actor_library,
         )
+        # Optionally auto-generate description if requested and empty
+        try:
+            generate_flag = _parse_bool(request.data.get("generate_description"), default=False) or _parse_bool(request.query_params.get("generate_description"), default=False)
+            if generate_flag and not getattr(material, "description", None):
+                desc, used_model = generate_material_description(material.title, material.author)
+                if desc:
+                    material.description = desc
+                    material.save(update_fields=["description"])
+        except Exception:
+            # Do not block creation on generation errors
+            logger.exception("Failed to auto-generate description for physical material %s", material.pk)
         output = self.get_serializer(material)
         return Response(output.data, status=status.HTTP_201_CREATED)
 
@@ -197,6 +228,23 @@ class PhysicalMaterialViewSet(ModelViewSet):
         serializer.save(
             library=serializer.validated_data.get("library") if is_super_admin(self.request.user) else actor_library
         )
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if not _user_can_access_material(request.user, instance):
+            raise ValidationError({"detail": "You can only access materials in your library."})
+
+        if not getattr(instance, "description", None):
+            try:
+                desc, used_model = generate_material_description(instance.title, instance.author)
+                if desc:
+                    instance.description = desc
+                    instance.save(update_fields=["description"])
+            except Exception:
+                logger.exception("Failed to generate description on retrieve for physical material %s", instance.pk)
+
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
 
 
 class DigitalMaterialViewSet(ModelViewSet):
@@ -233,6 +281,16 @@ class DigitalMaterialViewSet(ModelViewSet):
         )
         if not instance.cover_image and generate_pdf_cover_image(instance):
             instance.save(update_fields=["cover_image", "cover_generated_at"])
+        # Optionally auto-generate description if requested and empty
+        try:
+            generate_flag = _parse_bool(self.request.data.get("generate_description"), default=False) or _parse_bool(self.request.query_params.get("generate_description"), default=False)
+            if generate_flag and not getattr(instance, "description", None):
+                desc, used_model = generate_material_description(instance.title, instance.author)
+                if desc:
+                    instance.description = desc
+                    instance.save(update_fields=["description"])
+        except Exception:
+            logger.exception("Failed to auto-generate description for digital material %s", instance.pk)
 
     def perform_update(self, serializer):
         actor_library = get_user_library(self.request.user)
@@ -243,6 +301,23 @@ class DigitalMaterialViewSet(ModelViewSet):
         )
         if not instance.cover_image and generate_pdf_cover_image(instance):
             instance.save(update_fields=["cover_image", "cover_generated_at"])
+        
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if not _user_can_access_material(request.user, instance):
+            raise ValidationError({"detail": "You can only access materials in your library."})
+
+        if not getattr(instance, "description", None):
+            try:
+                desc, used_model = generate_material_description(instance.title, instance.author)
+                if desc:
+                    instance.description = desc
+                    instance.save(update_fields=["description"])
+            except Exception:
+                logger.exception("Failed to generate description on retrieve for digital material %s", instance.pk)
+
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
 
 
 class MaterialFeedbackViewSet(ModelViewSet):
@@ -503,34 +578,53 @@ def _build_library_context(user):
 
 class LibraryAssistantChatAPIView(APIView):
     permission_classes = [IsAuthenticated]
-
+    
     def post(self, request, *args, **kwargs):
         prompt = str(request.data.get("prompt", "")).strip()
         history = request.data.get("history", [])
         language = str(request.data.get("language", "en")).strip().lower()
-
+        
         if not prompt:
             raise ValidationError({"prompt": _("Prompt is required.")})
-
-        model = _get_gemini_model("GEMINI_CHAT_MODEL", default="gemini-1.5-flash")
+        
+        # Try multiple models in order of preference
+        models_to_try = [
+            _get_gemini_model("GEMINI_CHAT_MODEL", default="gemini-2.0-flash"),
+            "gemini-2.5-flash",  # Fallback 1
+            "gemini-1.5-pro",    # Fallback 2 (if still available)
+        ]
+        
         context_prefix = (
             f"Preferred response language: {'Amharic' if language.startswith('am') else 'English'}.\n"
             f"Library data context: {_build_library_context(request.user)}\n"
         )
-        result = _request_gemini_text(
-            model=model,
-            prompt=context_prefix + _build_chat_prompt(prompt, history),
-            max_output_tokens=400,
-        )
-
-        if not result["success"]:
-            return Response({"detail": result["error"]}, status=result["status"])
-
-        message = result["text"] or _("I am sorry, I could not generate an answer right now.")
-        return Response({"message": message, "model": model}, status=status.HTTP_200_OK)
-
-
-
+        
+        last_error = None
+        for model in models_to_try:
+            result = _request_gemini_text(
+                model=model,
+                prompt=context_prefix + _build_chat_prompt(prompt, history),
+                max_output_tokens=400,
+            )
+            
+            if result["success"]:
+                message = result["text"] or _("I am sorry, I could not generate an answer right now.")
+                return Response({"message": message, "model": model}, status=status.HTTP_200_OK)
+            
+            last_error = result
+            # Don't retry quota errors immediately
+            if "429" in str(result.get("error", "")):
+                break
+        
+        # Provide helpful error message
+        if "quota" in str(last_error.get("error", "")).lower():
+            return Response(
+                {"detail": "API quota exceeded. Please try again later or contact support."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS
+            )
+        
+        return Response({"detail": last_error.get("error", "Unknown error")}, 
+                       status=last_error.get("status", 500))
 
 class GenerateMaterialDescriptionAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -538,11 +632,20 @@ class GenerateMaterialDescriptionAPIView(APIView):
     def post(self, request, *args, **kwargs):
         title = str(request.data.get("title", "")).strip()
         author = str(request.data.get("author", "")).strip()
+        material_type = request.data.get("material_type")
+        material_id = request.data.get("material_id")
 
         if not title or not author:
             raise ValidationError({"detail": "Both title and author are required."})
 
-        model = _get_gemini_model("GEMINI_DESCRIPTION_MODEL", default="gemini-2.0-flash")
+        models_to_try = [
+            _get_gemini_model("GEMINI_DESCRIPTION_MODEL", default="gemini-2.0-flash"),
+            "gemini-2.5-flash",
+            "gemini-2.0-flash-lite",
+            "gemini-1.5-pro",
+        ]
+        seen = set()
+        models_to_try = [m for m in models_to_try if m and not (m in seen or seen.add(m))]
 
         prompt = (
             f"Title: {title}\n"
@@ -551,28 +654,75 @@ class GenerateMaterialDescriptionAPIView(APIView):
             "Use clear, neutral language and avoid inventing specific facts."
         )
 
-        result = _request_gemini_text(
-            model=model,
-            prompt=prompt,
-            max_output_tokens=220,
-        )
+        last_error = None
+        used_model = models_to_try[0]
+        description = ""
 
-        if not result["success"]:
-            return Response({"detail": result["error"]}, status=result["status"])
-
-        description = result["text"]
+        for model in models_to_try:
+            used_model = model
+            result = _request_gemini_text(
+                model=model,
+                prompt=prompt,
+                max_output_tokens=220,
+            )
+            if result["success"] and result["text"]:
+                description = result["text"]
+                break
+            last_error = result
 
         if not description:
+            if last_error and not last_error.get("success"):
+                return Response({"detail": last_error.get("error", "Unknown error")}, status=last_error.get("status", 502))
             description = f"{title} by {author} is a library material available for borrowing."
+
+        saved = False
+        if material_type and material_id:
+            try:
+                mtype_norm, material = _resolve_material_or_error(material_type, material_id)
+                # ensure user can access and update
+                if not _user_can_access_material(request.user, material):
+                    raise ValidationError({"detail": "You cannot modify materials outside your library."})
+                material.description = description
+                material.save(update_fields=["description"])
+                saved = True
+            except ValidationError:
+                # If resolving or permission failed, return a validation error
+                raise
+            except Exception:
+                # on unexpected failure, continue but indicate not saved
+                saved = False
 
         return Response(
             {
                 "description": description,
-                "model": model,
+                "model": used_model,
+                "saved_to_material": bool(saved),
+                "material_type": material_type,
+                "material_id": material_id,
             },
             status=status.HTTP_200_OK,
         )
 
+
+
+def _notify_role_users(*, roles, message, library=None, exclude_user=None):
+    from user_mgt.models import Notification, User
+
+    role_keys = {normalize_role(role) for role in roles}
+    users = User.objects.filter(status="ACTIVE")
+
+    for user in users:
+        if normalize_role(getattr(user, "role", None)) not in role_keys:
+            continue
+        if exclude_user and user.pk == exclude_user.pk:
+            continue
+        if library and getattr(user, "library_id", None) != getattr(library, "id", None):
+            continue
+        Notification.objects.create(
+            member_id=user,
+            message=str(message)[:200],
+            status="UNREAD",
+        )
 
 
 class MaterialTransferRequestViewSet(viewsets.ModelViewSet):
@@ -581,7 +731,17 @@ class MaterialTransferRequestViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def perform_create(self, serializer):
-        serializer.save(requested_by=self.request.user)
+        transfer = serializer.save(requested_by=self.request.user)
+        material_title = transfer.material.title
+        library = transfer.material.library
+        _notify_role_users(
+            roles=["STACK STAFF"],
+            message=(
+                f"Transfer request #{str(transfer.id)[:8]} created for "
+                f"'{material_title}' ({transfer.requested_quantity} copies)."
+            ),
+            library=library,
+        )
 
     @action(detail=True, methods=["post"], url_path="fulfill")
     def fulfill(self, request, pk=None):
@@ -647,6 +807,27 @@ class MaterialTransferRequestViewSet(viewsets.ModelViewSet):
             transfer.transferred_quantity = transfer.requested_quantity
             transfer.completed_at = timezone.now()
             transfer.save()
+
+        material_title = material.title
+        _notify_role_users(
+            roles=["FRONT DESK STAFF"],
+            message=(
+                f"Transfer request fulfilled: '{material_title}' "
+                f"({transfer.transferred_quantity} copies) moved to shelf."
+            ),
+            library=material.library,
+        )
+        if transfer.requested_by_id:
+            from user_mgt.models import Notification
+
+            Notification.objects.create(
+                member_id=transfer.requested_by,
+                message=(
+                    f"Your transfer for '{material_title}' was fulfilled. "
+                    f"{transfer.transferred_quantity} copies are now on the shelf."
+                )[:200],
+                status="UNREAD",
+            )
 
         return Response(
             self.get_serializer(transfer).data
