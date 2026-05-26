@@ -1,0 +1,11 @@
+Hello {{ first_name }},
+
+An account has been created for you on HU-DLRBS.
+
+ID Number: {{ id_number }}
+Email: {{ email }}
+Temporary password: {{ password }}
+
+Please sign in and change your password on first login.
+
+Login: {{ login_url }}

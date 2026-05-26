@@ -81,6 +81,7 @@ class User(AbstractUser):
         ('DEACTIVATED', 'DEACTIVATED'),
     ]
     status = models.CharField(max_length=30,choices=STATUS_CHOICES, default='ACTIVE')
+    must_change_password = models.BooleanField(default=False)
     USERNAME_FIELD = "id_number"
     REQUIRED_FIELDS = ["email"]
     objects = UserManager()

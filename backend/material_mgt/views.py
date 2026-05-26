@@ -1,7 +1,8 @@
 import os
 import requests
 import logging
-from uuid import UUID
+from uuid import UUID, uuid4
+from django.conf import settings
 from django.utils import timezone
 from django.db.models import Avg, Count, Prefetch, Q
 from django.utils.translation import gettext_lazy as _
@@ -12,12 +13,13 @@ from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework import viewsets
 from rest_framework.viewsets import ModelViewSet
-from rest_framework.permissions import BasePermission, IsAuthenticated, SAFE_METHODS
+from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated, SAFE_METHODS
 from rest_framework.decorators import action
 from rest_framework import filters
 from django_filters.rest_framework import DjangoFilterBackend
 from google import genai
 
+from ebook.cache_utils import CachedListRetrieveMixin, cache_api_response, get_or_set_versioned_value
 from user_mgt.access import (
     get_user_library,
     is_super_admin,
@@ -41,7 +43,16 @@ from .serializers import (
     MaterialTransferRequestSerializer,
 )
 from transactions.models import Borrow, Reservation
-from .services import generate_material_description
+from .services import generate_material_description, generate_pdf_cover_image, lookup_book_metadata
+from .cache import (
+    DIGITAL_MATERIAL_CACHE_NAMESPACE,
+    LIBRARY_CACHE_NAMESPACE,
+    MATERIAL_FEEDBACK_CACHE_NAMESPACE,
+    MATERIAL_INTERACTION_CACHE_NAMESPACE,
+    MATERIAL_LOOKUP_CACHE_NAMESPACE,
+    PHYSICAL_MATERIAL_CACHE_NAMESPACE,
+    invalidate_material_caches,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +149,9 @@ def _get_staff_profile_or_error(user):
         raise ValidationError({"detail": "Only staff-role users can create materials."})
     return user
 
-class PhysicalMaterialViewSet(ModelViewSet):
+class PhysicalMaterialViewSet(CachedListRetrieveMixin, ModelViewSet):
+    list_cache_namespace = PHYSICAL_MATERIAL_CACHE_NAMESPACE
+    retrieve_cache_namespace = PHYSICAL_MATERIAL_CACHE_NAMESPACE
     queryset = PhysicalMaterial.objects.select_related("library", "created_by").prefetch_related(
         Prefetch("feedbacks", queryset=MaterialFeedback.objects.select_related("user").order_by("-updated_at"))
     ).annotate(
@@ -207,6 +220,7 @@ class PhysicalMaterialViewSet(ModelViewSet):
             available_copies=available_copies,
             library=data.get("library") if is_super_admin(request.user) else actor_library,
         )
+        invalidate_material_caches()
         # Optionally auto-generate description if requested and empty
         try:
             generate_flag = _parse_bool(request.data.get("generate_description"), default=False) or _parse_bool(request.query_params.get("generate_description"), default=False)
@@ -228,6 +242,27 @@ class PhysicalMaterialViewSet(ModelViewSet):
         serializer.save(
             library=serializer.validated_data.get("library") if is_super_admin(self.request.user) else actor_library
         )
+        invalidate_material_caches()
+
+    def perform_destroy(self, instance):
+        instance.delete()
+        invalidate_material_caches()
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if not _user_can_access_material(request.user, instance):
+            raise ValidationError({"detail": "You can only access materials in your library."})
+
+        if not getattr(instance, "description", None):
+            try:
+                desc, used_model = generate_material_description(instance.title, instance.author)
+                if desc:
+                    instance.description = desc
+                    instance.save(update_fields=["description"])
+            except Exception:
+                logger.exception("Failed to generate description on retrieve for physical material %s", instance.pk)
+
+        return super().retrieve(request, *args, **kwargs)
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -247,7 +282,9 @@ class PhysicalMaterialViewSet(ModelViewSet):
         return Response(serializer.data)
 
 
-class DigitalMaterialViewSet(ModelViewSet):
+class DigitalMaterialViewSet(CachedListRetrieveMixin, ModelViewSet):
+    list_cache_namespace = DIGITAL_MATERIAL_CACHE_NAMESPACE
+    retrieve_cache_namespace = DIGITAL_MATERIAL_CACHE_NAMESPACE
     queryset = DigitalMaterial.objects.select_related("library", "created_by").prefetch_related(
         Prefetch("feedbacks", queryset=MaterialFeedback.objects.select_related("user").order_by("-updated_at"))
     ).annotate(
@@ -279,6 +316,7 @@ class DigitalMaterialViewSet(ModelViewSet):
             created_by=_get_staff_profile_or_error(self.request.user),
             library=serializer.validated_data.get("library") if is_super_admin(self.request.user) else actor_library,
         )
+        invalidate_material_caches()
         if not instance.cover_image and generate_pdf_cover_image(instance):
             instance.save(update_fields=["cover_image", "cover_generated_at"])
         # Optionally auto-generate description if requested and empty
@@ -299,6 +337,7 @@ class DigitalMaterialViewSet(ModelViewSet):
         instance = serializer.save(
             library=serializer.validated_data.get("library") if is_super_admin(self.request.user) else actor_library
         )
+        invalidate_material_caches()
         if not instance.cover_image and generate_pdf_cover_image(instance):
             instance.save(update_fields=["cover_image", "cover_generated_at"])
         
@@ -318,6 +357,26 @@ class DigitalMaterialViewSet(ModelViewSet):
 
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
+
+    def perform_destroy(self, instance):
+        instance.delete()
+        invalidate_material_caches()
+        
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if not _user_can_access_material(request.user, instance):
+            raise ValidationError({"detail": "You can only access materials in your library."})
+
+        if not getattr(instance, "description", None):
+            try:
+                desc, used_model = generate_material_description(instance.title, instance.author)
+                if desc:
+                    instance.description = desc
+                    instance.save(update_fields=["description"])
+            except Exception:
+                logger.exception("Failed to generate description on retrieve for digital material %s", instance.pk)
+
+        return super().retrieve(request, *args, **kwargs)
 
 
 class MaterialFeedbackViewSet(ModelViewSet):
@@ -351,14 +410,41 @@ class MaterialFeedbackViewSet(ModelViewSet):
 
         return queryset
 
+    def list(self, request, *args, **kwargs):
+        parent = super(MaterialFeedbackViewSet, self)
+        return cache_api_response(
+            MATERIAL_FEEDBACK_CACHE_NAMESPACE,
+            request,
+            lambda: parent.list(request, *args, **kwargs),
+        )
+
     def perform_create(self, serializer):
         target_material = serializer.validated_data.get("physical_material") or serializer.validated_data.get("digital_material")
         if target_material and not _user_can_access_material(self.request.user, target_material):
             raise ValidationError({"detail": "You can only comment on materials from your library."})
         serializer.save(user=self.request.user)
+        invalidate_material_caches()
+
+    def perform_update(self, serializer):
+        serializer.save()
+        invalidate_material_caches()
+
+    def perform_destroy(self, instance):
+        instance.delete()
+        invalidate_material_caches()
 
     @action(detail=False, methods=["get"], url_path=r"by-material/(?P<material_type>[^/.]+)/(?P<material_id>[^/.]+)")
     def by_material(self, request, material_type=None, material_id=None):
+        return cache_api_response(
+            MATERIAL_FEEDBACK_CACHE_NAMESPACE,
+            request,
+            lambda: self._by_material_uncached(request, material_type, material_id),
+            None,
+            material_type,
+            material_id,
+        )
+
+    def _by_material_uncached(self, request, material_type=None, material_id=None):
         if not material_type or not material_id:
             raise ValidationError({"detail": "material_type and material_id are required."})
 
@@ -401,6 +487,14 @@ class MaterialFavoriteViewSet(ModelViewSet):
 
         return queryset
 
+    def list(self, request, *args, **kwargs):
+        parent = super(MaterialFavoriteViewSet, self)
+        return cache_api_response(
+            MATERIAL_INTERACTION_CACHE_NAMESPACE,
+            request,
+            lambda: parent.list(request, *args, **kwargs),
+        )
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -418,10 +512,15 @@ class MaterialFavoriteViewSet(ModelViewSet):
         )
 
         output = self.get_serializer(favorite)
+        invalidate_material_caches()
         return Response(
             output.data,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
+
+    def perform_destroy(self, instance):
+        instance.delete()
+        invalidate_material_caches()
 
 
 class MaterialBookmarkViewSet(ModelViewSet):
@@ -449,6 +548,14 @@ class MaterialBookmarkViewSet(ModelViewSet):
 
         return queryset
 
+    def list(self, request, *args, **kwargs):
+        parent = super(MaterialBookmarkViewSet, self)
+        return cache_api_response(
+            MATERIAL_INTERACTION_CACHE_NAMESPACE,
+            request,
+            lambda: parent.list(request, *args, **kwargs),
+        )
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -466,16 +573,28 @@ class MaterialBookmarkViewSet(ModelViewSet):
         )
 
         output = self.get_serializer(bookmark)
+        invalidate_material_caches()
         return Response(
             output.data,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
+
+    def perform_destroy(self, instance):
+        instance.delete()
+        invalidate_material_caches()
 
 
 class MaterialInteractionStatsAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
+        return cache_api_response(
+            MATERIAL_INTERACTION_CACHE_NAMESPACE,
+            request,
+            lambda: self._get_uncached(request, *args, **kwargs),
+        )
+
+    def _get_uncached(self, request, *args, **kwargs):
         material_type = request.query_params.get("material_type")
         material_id = request.query_params.get("material_id")
 
@@ -684,6 +803,7 @@ class GenerateMaterialDescriptionAPIView(APIView):
                     raise ValidationError({"detail": "You cannot modify materials outside your library."})
                 material.description = description
                 material.save(update_fields=["description"])
+                invalidate_material_caches()
                 saved = True
             except ValidationError:
                 # If resolving or permission failed, return a validation error
@@ -732,6 +852,7 @@ class MaterialTransferRequestViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         transfer = serializer.save(requested_by=self.request.user)
+        invalidate_material_caches()
         material_title = transfer.material.title
         library = transfer.material.library
         _notify_role_users(
@@ -807,6 +928,28 @@ class MaterialTransferRequestViewSet(viewsets.ModelViewSet):
             transfer.transferred_quantity = transfer.requested_quantity
             transfer.completed_at = timezone.now()
             transfer.save()
+        invalidate_material_caches()
+
+        material_title = material.title
+        _notify_role_users(
+            roles=["FRONT DESK STAFF"],
+            message=(
+                f"Transfer request fulfilled: '{material_title}' "
+                f"({transfer.transferred_quantity} copies) moved to shelf."
+            ),
+            library=material.library,
+        )
+        if transfer.requested_by_id:
+            from user_mgt.models import Notification
+
+            Notification.objects.create(
+                member_id=transfer.requested_by,
+                message=(
+                    f"Your transfer for '{material_title}' was fulfilled. "
+                    f"{transfer.transferred_quantity} copies are now on the shelf."
+                )[:200],
+                status="UNREAD",
+            )
 
         material_title = material.title
         _notify_role_users(
@@ -842,8 +985,103 @@ class MaterialTransferRequestViewSet(viewsets.ModelViewSet):
         transfer.status = "CANCELLED"
         transfer.completed_at = timezone.now()
         transfer.save()
+        invalidate_material_caches()
 
         return Response(self.get_serializer(transfer).data)
+
+
+class MaterialBarcodeLookupAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        code = str(request.query_params.get("code") or "").strip()
+        if not code:
+            return Response({"detail": "Query parameter 'code' is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        result = get_or_set_versioned_value(
+            MATERIAL_LOOKUP_CACHE_NAMESPACE,
+            ["barcode-lookup", code.lower()],
+            lambda: lookup_book_metadata(code),
+            int(getattr(settings, "BARCODE_LOOKUP_CACHE_TTL", 86400)),
+        )
+        return Response(result, status=status.HTTP_200_OK)
+
+
+def _mobile_scan_session_cache_key(session_id):
+    return f"mobile-scan-session:{session_id}"
+
+
+def _mobile_scan_session_payload(session_id, ttl_seconds, code="", status_value="pending", submitted_at=""):
+    expires_at = timezone.now() + timezone.timedelta(seconds=ttl_seconds)
+    return {
+        "session_id": str(session_id),
+        "status": status_value,
+        "code": code,
+        "submitted_at": submitted_at,
+        "expires_at": expires_at.isoformat(),
+        "expires_in": ttl_seconds,
+    }
+
+
+class MobileScanSessionCreateAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        session_id = uuid4()
+        ttl_seconds = int(getattr(settings, "MOBILE_SCAN_SESSION_TTL", 600))
+        payload = _mobile_scan_session_payload(session_id, ttl_seconds)
+        from django.core.cache import cache
+
+        cache.set(_mobile_scan_session_cache_key(session_id), payload, ttl_seconds)
+        return Response(payload, status=status.HTTP_201_CREATED)
+
+
+class MobileScanSessionStatusAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, session_id):
+        from django.core.cache import cache
+
+        payload = cache.get(_mobile_scan_session_cache_key(session_id))
+        if not payload:
+            return Response({"detail": "Scan session expired or not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class MobileScanSessionSubmitAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, session_id):
+        from django.core.cache import cache
+
+        payload = cache.get(_mobile_scan_session_cache_key(session_id))
+        if not payload:
+            return Response({"detail": "Scan session expired or not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        code = str(request.data.get("code") or "").strip()
+        if not code:
+            return Response({"detail": "A barcode value is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        expires_at = payload.get("expires_at")
+        ttl_seconds = int(getattr(settings, "MOBILE_SCAN_SESSION_TTL", 600))
+        if expires_at:
+            try:
+                remaining = max(
+                    1,
+                    int((timezone.datetime.fromisoformat(expires_at) - timezone.now()).total_seconds()),
+                )
+                ttl_seconds = remaining
+            except Exception:
+                ttl_seconds = int(getattr(settings, "MOBILE_SCAN_SESSION_TTL", 600))
+
+        next_payload = {
+            **payload,
+            "status": "scanned",
+            "code": code,
+            "submitted_at": timezone.now().isoformat(),
+        }
+        cache.set(_mobile_scan_session_cache_key(session_id), next_payload, ttl_seconds)
+        return Response(next_payload, status=status.HTTP_200_OK)
 
 
 import barcode
@@ -861,6 +1099,7 @@ class BarcodeImageAPIView(APIView):
         
         if not material.barcode:
             material.save()
+            invalidate_material_caches()
             
         try:
             Code128 = barcode.get_barcode_class('code128')
@@ -1006,6 +1245,9 @@ class PhysicalMaterialXLSImportAPIView(APIView):
                 except Exception as row_err:
                     errors.append(f"Row {row_idx}: {str(row_err)}")
                     
+            if created_count:
+                invalidate_material_caches()
+
             return Response({
                 "success": True,
                 "created_count": created_count,
@@ -1015,5 +1257,3 @@ class PhysicalMaterialXLSImportAPIView(APIView):
             
         except Exception as e:
             return Response({"detail": f"Failed to parse XLS file: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
-
-

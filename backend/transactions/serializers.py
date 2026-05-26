@@ -3,6 +3,7 @@ from django.utils import timezone
 from decimal import Decimal
 from django.conf import settings
 from django.db import transaction
+from material_mgt.cache import invalidate_material_caches
 from .models import Borrow, Reservation, Return, Circulation
 from .services import calculate_overdue_days, finalize_return_for_borrow
 from .services import notify_borrow_success, notify_return_success
@@ -274,6 +275,7 @@ class BorrowSerializer(serializers.ModelSerializer):
 
             borrow = super().create(validated_data)
             transaction.on_commit(lambda: notify_borrow_success(borrow))
+            transaction.on_commit(invalidate_material_caches)
             return borrow
 
 
@@ -499,7 +501,8 @@ class CirculationSerializer(serializers.ModelSerializer):
             validated_data["material"] = locked_material
             validated_data["created_by"] = user
             validated_data["status"] = "BORROWED"
-            
-            return super().create(validated_data)
 
+            circulation = super().create(validated_data)
+            transaction.on_commit(invalidate_material_caches)
+            return circulation
 

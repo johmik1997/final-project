@@ -99,7 +99,17 @@ function handleLogin({ values }) {
       
       auth.setAuth(authPayload);
       localStorage.setItem("userDetail", JSON.stringify(authPayload));
-      
+
+      const mustChangePassword = Boolean(
+        data?.must_change_password || data?.user?.must_change_password
+      );
+
+      if (mustChangePassword) {
+        router.replace("/force-change-password");
+        toasted(true, "Please set a new password to continue");
+        return;
+      }
+
       const redirect = route.query.redirect || "/app/dashboard";
       router.replace(redirect);
       toasted(true, "Welcome back!");

@@ -14,10 +14,14 @@ PyJWT==2.11.0
 pyrsistent==0.20.0
 PyYAML==6.0.3
 requests==2.32.5
+redis==6.4.0
 sqlparse==0.5.5
 tzdata==2025.3
 uritemplate==4.2.0
 python-barcode
 openpyxl
 google-generativeai
-
+psycopg2-binary
+google-genai
+openpyxl
+python-barcode

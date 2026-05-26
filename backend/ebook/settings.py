@@ -113,6 +113,23 @@ DATABASES = {
     }
 }
 
+REDIS_CACHE_URL = os.getenv("REDIS_CACHE_URL", "redis://127.0.0.1:6379/1")
+
+CACHES = {
+    "default": {
+        "BACKEND": os.getenv(
+            "DJANGO_CACHE_BACKEND",
+            "django.core.cache.backends.redis.RedisCache",
+        ),
+        "LOCATION": os.getenv("DJANGO_CACHE_LOCATION", REDIS_CACHE_URL),
+        "TIMEOUT": int(os.getenv("DJANGO_CACHE_TIMEOUT", "300")),
+    }
+}
+
+API_RESPONSE_CACHE_TTL = int(os.getenv("API_RESPONSE_CACHE_TTL", "120"))
+BARCODE_LOOKUP_CACHE_TTL = int(os.getenv("BARCODE_LOOKUP_CACHE_TTL", "86400"))
+MOBILE_SCAN_SESSION_TTL = int(os.getenv("MOBILE_SCAN_SESSION_TTL", "600"))
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

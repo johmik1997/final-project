@@ -75,7 +75,7 @@ function create({ values }) {
       if (res.success) {
         user.add(res.data);
         emitEntityMutation('users', { action: 'created', id: res.data?.id });
-        toasted(true, 'User Created');
+        toasted(true, 'User created. Login credentials were sent by email.');
         closeModal();
       } else {
         toasted(false, '', res.error);

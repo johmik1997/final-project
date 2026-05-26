@@ -130,7 +130,7 @@
           <BarcodeScanner
             v-if="showBarcodeScanner && activeType === 'physical'"
             :active="showBarcodeScanner"
-            @scan="(code) => { searchQuery = code; showBarcodeScanner = false }"
+            @scan="handleBarcodeScan"
           />
 
           <div class="filter-selects">
@@ -416,7 +416,6 @@ const materialStore = useMaterials()
 const router = useRouter()
 const activeType = ref('physical')
 const viewMode = ref('grid')
-const searchQuery = ref('')
 const selectedCategory = ref('')
 const selectedCondition = ref('')
 const showBarcodeScanner = ref(false)
@@ -515,6 +514,8 @@ const pagination = usePaginations({
   },
 })
 
+const searchQuery = pagination.search
+
 const removeReq = useApiRequest()
 let unsubscribeEntitySync = () => {}
 
@@ -567,15 +568,6 @@ const conditions = computed(() => {
 
 const filteredRows = computed(() => {
   let rows = typeFilteredRows.value || []
-  const query = searchQuery.value.trim().toLowerCase()
-
-  if (query) {
-    rows = rows.filter((row) =>
-      [row?.title, row?.author, row?.category, row?.genre, row?.isbn, row?.barcode]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(query))
-    )
-  }
 
   if (selectedCategory.value) {
     rows = rows.filter((row) => (row?.category || row?.genre) === selectedCategory.value)
@@ -601,6 +593,13 @@ const headerStats = computed(() => {
 const isDigital = computed(() => activeType.value === 'digital')
 
 const canManageMaterial = computed(() => !['MEMBER', 'STACK STAFF', 'FRONT DESK STAFF'].includes(userRole.value))
+
+function handleBarcodeScan(code) {
+  const normalized = String(code || '').trim()
+  if (!normalized) return
+  searchQuery.value = normalized
+  showBarcodeScanner.value = false
+}
 
 watch(activeType, () => {
   materialStore.setCreateType(activeType.value)

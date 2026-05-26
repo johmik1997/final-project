@@ -23,6 +23,7 @@ import reportsRoutes from './reports.routes';
 import ForgotPassword from "@/pages/login/forgotPassword.vue";
 import ResetPassword from "@/pages/login/ResetPassword.vue";
 import VerifyOtp from "@/pages/login/verifyOtp.vue";
+import ForceChangePassword from "@/pages/login/ForceChangePassword.vue";
 
 const routes = [
   // Public routes (no layout wrapper)
@@ -50,6 +51,12 @@ const routes = [
     path: "/verify-otp",
     name: "VerifyOtp",
     component: VerifyOtp,
+  },
+  {
+    path: "/force-change-password",
+    name: "ForceChangePassword",
+    component: ForceChangePassword,
+    meta: { requiresAuth: true },
   },
   {
     path: "/signUp",
@@ -129,8 +136,13 @@ router.beforeEach(async (to, from) => {
     }
   }
 
+  const mustChangePassword = Boolean(auth.auth?.user?.must_change_password);
+
   // Redirect from login if already authenticated
   if (to.path === '/login' && auth.auth?.accessToken) {
+    if (mustChangePassword) {
+      return { path: '/force-change-password' };
+    }
     return { path: '/app/dashboard' };
   }
 
@@ -140,6 +152,14 @@ router.beforeEach(async (to, from) => {
       path: '/login',
       query: { redirect: to.path },
     };
+  }
+
+  if (auth.auth?.accessToken && mustChangePassword && to.path !== '/force-change-password') {
+    return { path: '/force-change-password' };
+  }
+
+  if (to.path === '/force-change-password' && auth.auth?.accessToken && !mustChangePassword) {
+    return { path: '/app/dashboard' };
   }
   
   if (!to.meta?.requiresAuth) {

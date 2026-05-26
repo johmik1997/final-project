@@ -1,15 +1,19 @@
 import secrets
 import time
+import threading
 from django.conf import settings
 from django.core.cache import cache
 from django.core.mail import send_mail
 from django.db import transaction
+from django.template.loader import render_to_string
+from django.core.mail import EmailMultiAlternatives
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework.exceptions import ValidationError
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from material_mgt.cache import invalidate_library_caches
 from transactions.models import Borrow, Reservation
 from .access import get_user_library, is_super_admin, normalize_role
 from .models import Library, LibraryPolicy, Notification, User
@@ -194,6 +198,27 @@ class UserCreateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"user_type": "User type is required for MEMBER."})
         return attrs
 
+    def _send_account_created_email(self, user, password):
+        login_url = getattr(settings, "PASSWORD_RESET_FRONTEND_URL", "http://localhost:5173/login")
+        context = {
+            "first_name": user.first_name or user.id_number,
+            "id_number": user.id_number,
+            "email": user.email,
+            "password": password,
+            "login_url": login_url,
+        }
+        subject = render_to_string("emails/account_created_subject.txt", context).strip()
+        body_text = render_to_string("emails/account_created.txt", context)
+        body_html = render_to_string("emails/account_created.html", context)
+        message = EmailMultiAlternatives(
+            subject=subject,
+            body=body_text,
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+            to=[user.email],
+        )
+        message.attach_alternative(body_html, "text/html")
+        message.send(fail_silently=False)
+
     def create(self, validated_data):
         password = validated_data.pop("password")
         phone = validated_data.pop("phone")
@@ -216,8 +241,18 @@ class UserCreateSerializer(serializers.ModelSerializer):
             elif role_norm == "DEPARTMENTHEAD":
                 user.department = department
             user.phone = phone
+            user.must_change_password = True
             user.save()
-            return user
+
+        def _email_runner():
+            try:
+                self._send_account_created_email(user, password)
+            except Exception:
+                pass
+
+        threading.Thread(target=_email_runner, daemon=True).start()
+        invalidate_library_caches()
+        return user
 
 
 # --- Authentication & Password Reset Serializers ---
@@ -225,6 +260,33 @@ class UserCreateSerializer(serializers.ModelSerializer):
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(write_only=True)
     new_password = serializers.CharField(write_only=True, min_length=8)
+
+
+class FirstLoginChangePasswordSerializer(serializers.Serializer):
+    password = serializers.CharField(write_only=True, min_length=8)
+    confirm_password = serializers.CharField(write_only=True, min_length=8)
+
+    def validate(self, attrs):
+        if attrs["password"] != attrs["confirm_password"]:
+            raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
+
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            raise serializers.ValidationError({"detail": "Authentication required."})
+        if not getattr(user, "must_change_password", False):
+            raise serializers.ValidationError({"detail": "Password change is not required for this account."})
+
+        validate_password(attrs["password"], user)
+        attrs["user"] = user
+        return attrs
+
+    def save(self):
+        user = self.validated_data["user"]
+        user.set_password(self.validated_data["password"])
+        user.must_change_password = False
+        user.save(update_fields=["password", "must_change_password"])
+        return user
 
 
 class ForgotPasswordSerializer(serializers.Serializer):
@@ -325,8 +387,8 @@ class UserMeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "id_number", "first_name", "last_name", "email", "role", "status", "library_id", "library_name", "phone", "photo"]
-        read_only_fields = ["id", "id_number", "role", "status", "library_id", "library_name", "phone", "photo"]
+        fields = ["id", "id_number", "first_name", "last_name", "email", "role", "status", "must_change_password", "library_id", "library_name", "phone", "photo"]
+        read_only_fields = ["id", "id_number", "role", "status", "must_change_password", "library_id", "library_name", "phone", "photo"]
 
     def get_phone(self, obj):
         profile = _get_user_profile(obj)
@@ -369,11 +431,13 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             "email": self.user.email,
             "role": self.user.role,
             "status": self.user.status,
+            "must_change_password": bool(getattr(self.user, "must_change_password", False)),
             "library_id": str(self.user.library_id) if self.user.library_id else None,
             "library_name": self.user.library.name if self.user.library_id else None,
             "phone": getattr(profile, "phone", None),
             "photo": _build_media_url(self.context.get("request"), getattr(profile, "photo", None)),
         }
+        data["must_change_password"] = bool(getattr(self.user, "must_change_password", False))
         return data
 
 
@@ -474,6 +538,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             instance.user_type = user_type
         instance.save()
 
+        invalidate_library_caches()
         return instance
 
 

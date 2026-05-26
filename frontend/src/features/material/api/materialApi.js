@@ -50,6 +50,23 @@ export function generateMaterialDescription(payload = {}) {
   return api.addAuthenticationHeader().post("/material/generate-description/", payload);
 }
 
+export function lookupMaterialBarcode(code) {
+  const qr = getQueryFormObject({ code });
+  return api.addAuthenticationHeader().get(`/material/lookup-barcode/${qr}`);
+}
+
+export function createMobileScanSession() {
+  return api.addAuthenticationHeader().post('/material/mobile-scan/sessions/', {});
+}
+
+export function getMobileScanSession(sessionId) {
+  return api.get(`/material/mobile-scan/sessions/${sessionId}/`);
+}
+
+export function submitMobileScanSession(sessionId, payload = {}) {
+  return api.post(`/material/mobile-scan/sessions/${sessionId}/submit/`, payload);
+}
+
 export function sendLibraryAssistantMessage(payload = {}) {
   return api.addAuthenticationHeader().post("/material/assistant-chat/", payload);
 }
