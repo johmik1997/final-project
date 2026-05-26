@@ -69,8 +69,7 @@ function goToSignup() {
       <!-- Left Side - Hero Section -->
       <div class="hidden lg:flex flex-col justify-center p-8 md:p-12 lg:p-16 xl:p-20">
         <div class="max-w-lg mx-auto">
-          <!-- Logo Area -->
-          <div class="flex items-center space-x-3 mb-8">
+<button @click="router.push('/')">       <div class="flex items-center space-x-3 mb-8">
             <img 
               src="@/assets/logolib.jpg" 
               alt="Logo" 
@@ -81,13 +80,13 @@ function goToSignup() {
               <p :class="isDarkTheme ? 'text-slate-400' : 'text-slate-500'" class="text-xs">Digital Library System</p>
             </div>
           </div>
-
+</button>
           <!-- Welcome Message -->
           <div class="space-y-4">
             <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight" :class="isDarkTheme ? 'text-white' : 'text-slate-800'">
-              Welcome to 
+              Welcome to Hawassa University
               <span class="text-transparent bg-clip-text bg-gradient-to-r from-amber-500 to-red-500">
-                Your Digital Library
+ Library Digital System
               </span>
             </h1>
             <p class="text-base md:text-lg leading-relaxed" :class="isDarkTheme ? 'text-slate-300' : 'text-slate-600'">

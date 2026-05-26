@@ -1,6 +1,5 @@
 <script setup>
 import { onMounted, computed, ref } from 'vue';
-import Button from '@/components/Button.vue';
 import NewFormParent from '../../roles/components/NewFormParent.vue';
 import { ModalParent, closeModal } from '@customizer/modal-x';
 import { useApiRequest } from '@/composables/useApiRequest';
@@ -8,15 +7,10 @@ import { createCirculation } from '../api/circulationApi';
 import { getAllMaterials } from '../../material/api/materialApi';
 import { getAllUser } from '../../users/Api/UserApi';
 import { useCirculation } from '../store/circulationStore';
-import { secondDateFormatWithTime, toasted } from '@/utils/utils';
+import { toasted } from '@/utils/utils';
 import BaseIcon from '@/components/base/BaseIcon.vue';
-import { 
-  mdiCheckCircle,
-  mdiAlertCircle,
-  mdiCloseCircle,
-  mdiMagnify,
-  mdiBook
-} from '@mdi/js';
+import MaterialCard from '../components/MaterialCard.vue';
+import { mdiMagnify, mdiBook, mdiAccount } from '@mdi/js';
 
 const circStore = useCirculation();
 const req = useApiRequest();
@@ -27,7 +21,6 @@ const selectedMaterial = ref(null);
 const selectedMember = ref(null);
 const errorMessage = ref('');
 const searchQuery = ref('');
-const showMemberModal = ref(false);
 const memberSearch = ref('');
 
 onMounted(() => {
@@ -36,86 +29,65 @@ onMounted(() => {
 });
 
 async function loadMaterials() {
-  try {
-    await materialReq.send(() => getAllMaterials({ page: 1, size: 500 }, 'physical'));
-  } catch (error) {
-    console.error('Error loading materials:', error);
-    toasted(false, 'Failed to load shelf catalog');
-  }
+  await materialReq.send(() => getAllMaterials({ page: 1, size: 500 }, 'physical'));
 }
 
 async function loadMembers(search = '') {
-  try {
-    await memberReq.send(() => getAllUser({ page: 1, size: 50, role: 'MEMBER', search }));
-  } catch (error) {
-    console.error('Error loading members:', error);
-    toasted(false, 'Failed to load members');
-  }
+  await memberReq.send(() => getAllUser({ page: 1, size: 50, role: 'MEMBER', search }));
 }
 
-const shelfMaterials = computed(() => {
-  const payload = materialReq.response.value;
-  let list = [];
-  if (!payload) list = [];
-  else if (Array.isArray(payload)) list = payload;
-  else if (Array.isArray(payload?.content)) list = payload.content;
-  else if (Array.isArray(payload?.response)) list = payload.response;
-  else if (Array.isArray(payload?.data)) list = payload.data;
-  else if (payload?.results && Array.isArray(payload.results)) list = payload.results;
-  else if (payload?.result && Array.isArray(payload.result)) list = payload.result;
-  
-  // Filter: ONLY materials currently on SHELF are allowed for on-site library circulation!
-  return list.filter(m => m.location === 'SHELF');
-});
+function rowsFromPayload(payload) {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.content)) return payload.content;
+  if (Array.isArray(payload?.response)) return payload.response;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.results)) return payload.results;
+  if (Array.isArray(payload?.result)) return payload.result;
+  return [];
+}
+
+const shelfMaterials = computed(() =>
+  rowsFromPayload(materialReq.response.value).filter((m) => m.location === 'SHELF')
+);
 
 const filteredMaterials = computed(() => {
   if (!searchQuery.value) return shelfMaterials.value;
   const q = searchQuery.value.toLowerCase();
-  return shelfMaterials.value.filter(m => 
-    m.title?.toLowerCase().includes(q) || 
-    m.author?.toLowerCase().includes(q) ||
-    m.isbn?.toLowerCase().includes(q)
+  return shelfMaterials.value.filter(
+    (m) =>
+      m.title?.toLowerCase().includes(q) ||
+      m.author?.toLowerCase().includes(q) ||
+      m.isbn?.toLowerCase().includes(q)
   );
 });
 
-const members = computed(() => {
-  const payload = memberReq.response.value;
-  let list = [];
-  if (!payload) list = [];
-  else if (Array.isArray(payload)) list = payload;
-  else if (Array.isArray(payload?.content)) list = payload.content;
-  else if (Array.isArray(payload?.response)) list = payload.response;
-  else if (Array.isArray(payload?.results)) list = payload.results;
-  else if (Array.isArray(payload?.data)) list = payload.data;
-  else if (Array.isArray(payload?.result)) list = payload.result;
-  return list;
-});
+const members = computed(() => rowsFromPayload(memberReq.response.value));
 
 const filteredMembers = computed(() => {
   if (!memberSearch.value) return members.value;
   const q = memberSearch.value.toLowerCase();
-  return members.value.filter(m => 
-    m.first_name?.toLowerCase().includes(q) || 
-    m.last_name?.toLowerCase().includes(q) ||
-    m.id_number?.toLowerCase().includes(q)
+  return members.value.filter(
+    (m) =>
+      m.first_name?.toLowerCase().includes(q) ||
+      m.last_name?.toLowerCase().includes(q) ||
+      m.id_number?.toLowerCase().includes(q)
   );
 });
 
-async function handleSubmitCirculation() {
+function handleSubmitCirculation() {
   errorMessage.value = '';
-  
   if (!selectedMaterial.value || !selectedMember.value) {
     toasted(false, 'Please select both material and member');
     return;
   }
 
-  const payload = {
-    member: selectedMember.value.id,
-    material: selectedMaterial.value.id
-  };
-
   req.send(
-    () => createCirculation(payload),
+    () =>
+      createCirculation({
+        member: selectedMember.value.id,
+        material: selectedMaterial.value.id,
+      }),
     (res) => {
       if (res?.success) {
         toasted(true, 'Library circulation logged successfully');
@@ -137,110 +109,351 @@ function setInitialMaterial(material) {
   return '';
 }
 
-const step = computed(() => {
-  if (!selectedMaterial.value) return 1;
-  return 2;
-});
+const step = computed(() => (selectedMaterial.value ? 2 : 1));
 </script>
 
 <template>
-  <ModalParent v-slot="{ data }" name="AddCirculation" class="bg-black/50 min-h-full p-4 sm:p-6 md:p-10 grid place-items-center">
+  <ModalParent
+    v-slot="{ data }"
+    name="AddCirculation"
+    class="bg-black/50 min-h-full p-4 sm:p-6 md:p-10 grid place-items-center"
+  >
     <span class="hidden" v-if="data?.material">{{ setInitialMaterial(data.material) }}</span>
-    <div class="w-[94vw] max-w-4xl max-h-[88vh] mx-auto my-12">
-      <NewFormParent title="Log Library Circulation (Shelf Materials Only)" size="xs" class="w-full h-full max-h-[88vh]">
-        <div class="p-6 space-y-6">
-        <!-- Steps Indicator -->
-        <div class="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4">
-          <div class="grid grid-cols-2 gap-4 text-center">
-            <div class="flex items-center justify-center gap-2">
-              <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold"
-                    :class="step >= 1 ? 'bg-black text-white dark:bg-white dark:text-black' : 'bg-zinc-200 text-zinc-600'">1</span>
-              <span class="text-sm font-medium" :class="step >= 1 ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400'">Pick Shelf Material</span>
+    <div class="w-[94vw] max-w-5xl max-h-[90vh] mx-auto">
+      <NewFormParent title="Log shelf circulation" size="xs" class="w-full max-h-[90vh]">
+        <div class="p-5 sm:p-6 space-y-5 overflow-y-auto max-h-[calc(90vh-4rem)]">
+          <div class="steps-bar">
+            <div class="step" :class="{ active: step >= 1 }">
+              <span class="step-num">1</span>
+              <span>Pick shelf material</span>
             </div>
-            <div class="flex items-center justify-center gap-2">
-              <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold"
-                    :class="step >= 2 ? 'bg-black text-white dark:bg-white dark:text-black' : 'bg-zinc-200 text-zinc-600'">2</span>
-              <span class="text-sm font-medium" :class="step >= 2 ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400'">Select Member & Confirm</span>
+            <div class="step" :class="{ active: step >= 2 }">
+              <span class="step-num">2</span>
+              <span>Select member & confirm</span>
             </div>
           </div>
-        </div>
 
-        <!-- Step 1: Material Selection -->
-        <div v-if="step === 1" class="space-y-4">
-          <div class="relative">
-            <BaseIcon :path="mdiMagnify" size="20" class="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />
-            <input v-model="searchQuery" type="text" placeholder="Search shelf inventory by title, author, or ISBN..."
-                   class="w-full pl-12 pr-4 py-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl outline-none" />
+          <div v-if="step === 1" class="space-y-4">
+            <div class="search-wrap">
+              <BaseIcon :path="mdiMagnify" size="20" class="search-icon" />
+              <input
+                v-model="searchQuery"
+                type="text"
+                placeholder="Search shelf inventory by title, author, or ISBN..."
+                class="search-input"
+              />
+            </div>
+
+            <div v-if="materialReq.pending.value" class="state-box">Loading shelf catalog...</div>
+            <div v-else-if="!filteredMaterials.length" class="state-box empty">
+              <BaseIcon :path="mdiBook" size="32" />
+              <p>No shelf materials found</p>
+              <span>Complete transfer requests to move books to the shelf first.</span>
+            </div>
+            <div v-else class="material-grid">
+              <MaterialCard
+                v-for="item in filteredMaterials"
+                :key="item.id"
+                :material="item"
+                :is-selected="selectedMaterial?.id === item.id"
+                @select="selectedMaterial = $event"
+              />
+            </div>
           </div>
 
-          <!-- Shelf Catalog -->
-          <div v-if="materialReq.pending.value" class="py-8 text-center text-zinc-500">Loading shelf catalog...</div>
-          <div v-else-if="filteredMaterials.length === 0" class="py-12 text-center bg-zinc-50 dark:bg-zinc-900/50 rounded-xl border-2 border-dashed border-zinc-200 dark:border-zinc-800">
-            <BaseIcon :path="mdiBook" size="32" class="text-zinc-300 mx-auto mb-2" />
-            <p class="text-zinc-500 font-medium">No shelf materials found</p>
-            <p class="text-xs text-zinc-400 mt-1">Make sure transfer requests are completed to bring books to the Shelf first.</p>
-          </div>
-          <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[40vh] overflow-y-auto pr-1">
-            <div v-for="item in filteredMaterials" :key="item.id"
-                 class="p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between"
-                 :class="selectedMaterial?.id === item.id ? 'border-black bg-zinc-50 dark:border-white dark:bg-zinc-900' : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-400'"
-                 @click="selectedMaterial = item">
+          <div v-else class="space-y-4">
+            <div class="selected-material-banner">
               <div>
-                <h4 class="font-bold text-zinc-900 dark:text-zinc-100">{{ item.title }}</h4>
-                <p class="text-xs text-zinc-500">by {{ item.author }}</p>
+                <p class="banner-label">Selected shelf material</p>
+                <h3>{{ selectedMaterial.title }}</h3>
+                <p class="banner-meta">by {{ selectedMaterial.author }}</p>
               </div>
-              <div class="mt-4 flex justify-between items-center text-xs">
-                <span class="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">{{ item.category }}</span>
-                <span class="font-semibold text-zinc-700 dark:text-zinc-300">Copies: {{ item.available_copies }} available</span>
-              </div>
+              <button type="button" class="btn-link" @click="selectedMaterial = null">Change</button>
+            </div>
+
+            <label class="field-label">Select library member</label>
+            <div class="search-wrap">
+              <BaseIcon :path="mdiMagnify" size="18" class="search-icon" />
+              <input
+                v-model="memberSearch"
+                type="text"
+                placeholder="Search members by name or ID..."
+                class="search-input"
+              />
+            </div>
+
+            <div class="member-grid">
+              <button
+                v-for="user in filteredMembers"
+                :key="user.id"
+                type="button"
+                class="member-card"
+                :class="{ selected: selectedMember?.id === user.id }"
+                @click="selectedMember = user"
+              >
+                <div class="member-avatar">
+                  <BaseIcon :path="mdiAccount" size="20" />
+                </div>
+                <div>
+                  <h4>{{ user.first_name }} {{ user.last_name }}</h4>
+                  <p>ID: {{ user.id_number || '-' }}</p>
+                </div>
+              </button>
+            </div>
+
+            <div v-if="errorMessage" class="error-box">{{ errorMessage }}</div>
+
+            <div class="footer-actions">
+              <button type="button" class="btn-outline" @click="selectedMaterial = null">Back</button>
+              <button
+                type="button"
+                class="btn-primary"
+                :disabled="!selectedMember || req.pending.value"
+                @click="handleSubmitCirculation"
+              >
+                Confirm circulation
+              </button>
             </div>
           </div>
         </div>
-
-        <!-- Step 2: Member Confirmation -->
-        <div v-else class="space-y-4">
-          <div class="p-4 bg-zinc-50 dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-xl flex justify-between items-center">
-            <div>
-              <p class="text-xs text-zinc-400 uppercase tracking-wider font-bold">Selected Shelf Material</p>
-              <h3 class="text-lg font-bold text-zinc-950 dark:text-zinc-50">{{ selectedMaterial.title }}</h3>
-              <p class="text-xs text-zinc-500">by {{ selectedMaterial.author }}</p>
-            </div>
-            <button @click="selectedMaterial = null" class="text-xs font-semibold underline text-zinc-500 hover:text-black">Change</button>
-          </div>
-
-          <div class="space-y-3">
-            <label class="bw-label">Select Library Member</label>
-            <div class="relative">
-              <BaseIcon :path="mdiMagnify" size="18" class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-              <input v-model="memberSearch" type="text" placeholder="Search members by name or ID..."
-                     class="w-full pl-10 pr-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl outline-none" />
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[22vh] overflow-y-auto pr-1">
-              <div v-for="user in filteredMembers" :key="user.id"
-                   class="p-3 border rounded-xl cursor-pointer text-left transition-all"
-                   :class="selectedMember?.id === user.id ? 'border-black bg-zinc-50 dark:border-white dark:bg-zinc-900' : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-400'"
-                   @click="selectedMember = user">
-                <h4 class="font-bold text-zinc-900 dark:text-zinc-100">{{ user.first_name }} {{ user.last_name }}</h4>
-                <p class="text-xs text-zinc-500">ID: {{ user.id_number || '-' }}</p>
-              </div>
-            </div>
-          </div>
-
-          <div v-if="errorMessage" class="p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-xl text-xs text-red-600 dark:text-red-400">
-            {{ errorMessage }}
-          </div>
-
-          <div class="flex justify-end gap-3 pt-2">
-            <button @click="selectedMaterial = null" class="bw-btn bw-btn-outline">Back</button>
-            <button @click="handleSubmitCirculation" :disabled="!selectedMember || req.pending.value"
-                    class="bw-btn bw-btn-primary disabled:opacity-50">
-              Confirm Circulation
-            </button>
-          </div>
-        </div>
-      </div>
-    </NewFormParent>
-  </div>
+      </NewFormParent>
+    </div>
   </ModalParent>
 </template>
+
+<style scoped>
+.steps-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 0.85rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.dark .steps-bar {
+  background: #0f172a;
+  border-color: #334155;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.step.active {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.dark .step.active {
+  color: #f1f5f9;
+}
+
+.step-num {
+  width: 1.5rem;
+  height: 1.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #e2e8f0;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.step.active .step-num {
+  background: linear-gradient(135deg, #f59e0b, #ea580c);
+  color: white;
+}
+
+.search-wrap {
+  position: relative;
+}
+
+.search-icon {
+  position: absolute;
+  left: 0.9rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.7rem 0.9rem 0.7rem 2.5rem;
+  border-radius: 0.75rem;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  font-size: 0.875rem;
+}
+
+.dark .search-input {
+  background: #1e293b;
+  border-color: #334155;
+  color: #f1f5f9;
+}
+
+.material-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+  max-height: 42vh;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.member-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.65rem;
+  max-height: 24vh;
+  overflow-y: auto;
+}
+
+.member-card {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.member-card.selected {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.25);
+}
+
+.dark .member-card {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+.member-avatar {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.65rem;
+  display: grid;
+  place-items: center;
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+}
+
+.member-card h4 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.member-card p {
+  margin: 0.15rem 0 0;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.selected-material-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 0.85rem;
+  background: linear-gradient(135deg, #fff7ed, #fffbeb);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.banner-label {
+  margin: 0;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #b45309;
+  font-weight: 700;
+}
+
+.selected-material-banner h3 {
+  margin: 0.25rem 0 0;
+  font-size: 1.1rem;
+}
+
+.banner-meta {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.field-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.state-box {
+  padding: 2rem;
+  text-align: center;
+  color: #64748b;
+  border-radius: 0.85rem;
+  border: 1px dashed #e2e8f0;
+}
+
+.state-box.empty {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: center;
+}
+
+.error-box {
+  padding: 0.75rem 1rem;
+  border-radius: 0.65rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  font-size: 0.8rem;
+}
+
+.footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  padding-top: 0.5rem;
+}
+
+.btn-primary,
+.btn-outline,
+.btn-next,
+.btn-link {
+  padding: 0.6rem 1rem;
+  border-radius: 0.65rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.btn-primary,
+.btn-next {
+  background: linear-gradient(135deg, #f59e0b, #ea580c);
+  color: #0f172a;
+}
+
+.btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-outline {
+  border: 1px solid #e2e8f0;
+  color: #475569;
+}
+
+.btn-link {
+  color: #b45309;
+  text-decoration: underline;
+}
+</style>

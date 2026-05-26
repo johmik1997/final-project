@@ -10,6 +10,14 @@ export default [
     roles: ["MEMBER", "ADMIN", "SUPER ADMIN", "STACK STAFF", "TECHNICAL STAFF", "FRONT DESK STAFF", "DEPARTMENT HEAD"],
   },
   {
+    path: "/reports",
+    name: "Reports",
+    icon: icons.report,
+    meta: { requiresAuth: true, permissions: [] },
+    type: "Analytics",
+    roles: ["MEMBER", "ADMIN", "SUPER ADMIN", "STACK STAFF", "TECHNICAL STAFF", "FRONT DESK STAFF", "DEPARTMENT HEAD"],
+  },
+  {
     path: "/material",
     name: "Material",
     icon: icons.books,

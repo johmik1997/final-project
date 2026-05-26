@@ -19,6 +19,7 @@ import borrow from "./borrow.routes";
 import returnsRoutes from './returns.routes';
 import transferRoutes from './transfer.routes';
 import paymentRoutes from './payment.routes';
+import reportsRoutes from './reports.routes';
 import ForgotPassword from "@/pages/login/forgotPassword.vue";
 import ResetPassword from "@/pages/login/ResetPassword.vue";
 import VerifyOtp from "@/pages/login/verifyOtp.vue";
@@ -80,6 +81,7 @@ const routes = [
       ...returnsRoutes,
       ...transferRoutes,
       ...paymentRoutes,
+      ...reportsRoutes,
     ],
   },
 ];

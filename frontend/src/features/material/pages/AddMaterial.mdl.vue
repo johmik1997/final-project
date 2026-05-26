@@ -108,7 +108,39 @@ function prevStep() {
     currentStep.value--;
   }
 }
-
+const departments = [
+  'Biology',
+  'Chemistry',
+  'Physics',
+  'Mathematics',
+  'Statistics',
+  'Civil Engineering',
+  'Mechanical Engineering',
+  'Electrical & Computer Engineering',
+  'Software Engineering',
+  'Information Technology',
+  'Computer Science',
+  'Architecture',
+  'Agronomy',
+  'Animal Science',
+  'Plant Science',
+  'Nursing',
+  'Public Health',
+  'Medicine',
+  'Pharmacy',
+  'Economics',
+  'Sociology',
+  'Political Science',
+  'History',
+  'Geography',
+  'Law',
+  'Business Administration',
+  'Accounting & Finance',
+  'Management',
+  'Education',
+  'Journalism & Communication',
+  'Other'
+];
 function handleCreate({ values }) {
   if (isDigital.value) {
     const fileInput = document.querySelector('input[name="file"]');
@@ -267,7 +299,7 @@ function validateAndNext() {
               <Select name="language" label="Language" validation="required"
                 :options="['English', 'Amharic']"
                 :attributes="{ placeholder: 'e.g. English, Amharic' }" />
-              <Input name="department" label="Department" :attributes="{ placeholder: 'Target Department' }" />
+              <Select name="department" label="Department" :options="departments" :attributes="{ placeholder: 'Target Department' }" />
               <Select
                 :obj="true"
                 name="library"

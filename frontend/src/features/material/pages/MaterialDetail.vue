@@ -209,7 +209,12 @@
                   <p class="spec-label">Barcode</p>
                   <p class="spec-value font-mono">{{ material?.barcode }}</p>
                   <div class="mt-2 flex flex-col items-start gap-1">
-                    <img :src="barcodeUrl" alt="Barcode" class="h-10 object-contain border p-1 bg-white rounded" />
+                    <img
+                      v-if="barcodeImageUrl"
+                      :src="barcodeImageUrl"
+                      alt="Barcode"
+                      class="h-10 object-contain border p-1 bg-white rounded"
+                    />
                     <button @click="printBarcode" class="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium flex items-center gap-1 mt-1">
                       <BaseIcon :path="mdiPrinter" size="12" /> Print Barcode
                     </button>
@@ -296,7 +301,8 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import ApiService from '@/service/ApiService';
 import { useRoute, useRouter } from 'vue-router';
 import { useApiRequest } from '@/composables/useApiRequest';
 import { normalizeRoleValue } from '@/utils/authNavigation';
@@ -484,8 +490,8 @@ const statsCards = computed(() => [
     value: normalizeNumber(material.value?.comments_count ?? interactionStats.value?.comments_count),
   },
 ]);
-
-watch(
+const barcodeImageUrl = ref('');
+const barcodeObjectUrl = ref('');watch(
   material,
   (row) => {
     imageSrc.value = row?.cover_image || row?.image || row?.thumbnail || defaultCover;
@@ -496,18 +502,45 @@ watch(
     if (row?.my_comment != null) {
       reviewForm.comment = String(row.my_comment || '');
     }
+    loadBarcodeImage();
   },
   { immediate: true }
 );
 
-const barcodeUrl = computed(() => {
-  const base = import.meta.env.v_API_URL || 'http://localhost:8000';
-  const stripBase = base.replace(/\/+$/, '');
-  const apiBase = stripBase.endsWith('/api') ? stripBase : `${stripBase}/api`;
-  return `${apiBase}/material/barcode/${material.value?.id || material.value?.uuid}/`;
-});
 
+async function loadBarcodeImage() {
+  if (barcodeObjectUrl.value) {
+    URL.revokeObjectURL(barcodeObjectUrl.value);
+    barcodeObjectUrl.value = '';
+  }
+
+  barcodeImageUrl.value = '';
+
+  const id = material.value?.id || material.value?.uuid;
+  if (!isPhysicalMaterial.value || !material.value?.barcode || !id) return;
+
+  try {
+    const api = new ApiService();
+    api.addAuthenticationHeader();
+
+    const response = await api.api.get(
+      `/material/barcode/${id}/`,
+      { responseType: 'blob' }
+    );
+
+    const blob = response?.data;
+
+    if (blob instanceof Blob && blob.size > 0) {
+      const url = URL.createObjectURL(blob);
+      barcodeObjectUrl.value = url;
+      barcodeImageUrl.value = url;
+    }
+  } catch (err) {
+    console.error('Failed to load barcode image:', err);
+  }
+}
 function printBarcode() {
+  if (!barcodeImageUrl.value) return;
   const printWindow = window.open('', '_blank');
   if (!printWindow) return;
   printWindow.document.write(`
@@ -541,7 +574,7 @@ function printBarcode() {
         </style>
       </head>
       <body>
-        <img src="${barcodeUrl.value}" onload="window.print(); window.close();" />
+        <img src="${barcodeImageUrl.value}" onload="window.print(); window.close();" />
         <h2>${material.value?.title || ''}</h2>
         <p>Barcode: ${material.value?.barcode || ''}</p>
       </body>
@@ -549,6 +582,12 @@ function printBarcode() {
   `);
   printWindow.document.close();
 }
+
+onBeforeUnmount(() => {
+  if (barcodeObjectUrl.value) {
+    URL.revokeObjectURL(barcodeObjectUrl.value);
+  }
+});
 
 function loadMaterial() {
   if (!materialId.value) return;

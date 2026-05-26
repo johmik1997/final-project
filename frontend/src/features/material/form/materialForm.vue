@@ -13,7 +13,39 @@ const props = defineProps({
     default: () => [],
   },
 });
-
+const departments = [
+  'Biology',
+  'Chemistry',
+  'Physics',
+  'Mathematics',
+  'Statistics',
+  'Civil Engineering',
+  'Mechanical Engineering',
+  'Electrical & Computer Engineering',
+  'Software Engineering',
+  'Information Technology',
+  'Computer Science',
+  'Architecture',
+  'Agronomy',
+  'Animal Science',
+  'Plant Science',
+  'Nursing',
+  'Public Health',
+  'Medicine',
+  'Pharmacy',
+  'Economics',
+  'Sociology',
+  'Political Science',
+  'History',
+  'Geography',
+  'Law',
+  'Business Administration',
+  'Accounting & Finance',
+  'Management',
+  'Education',
+  'Journalism & Communication',
+  'Other'
+];
 function toDateInputValue(value) {
   if (!value) return '';
   if (typeof value === 'string') return value.slice(0, 10);
@@ -50,7 +82,14 @@ function toDateInputValue(value) {
 
     <Input name="language" label="Language" :value="initialData?.language || ''" />
     <Input name="published_date" type="date" label="Published Date" :value="toDateInputValue(initialData?.published_date)" />
-    <Input name="department" label="Department" :value="initialData?.department || ''" />
+    <Select
+      name="department"
+      label="Department"
+      validation="required"
+      :value="initialData?.department || ''"
+      :options="departments"
+      :attributes="{ placeholder: 'Select Department' }"
+    />
     <Input name="location" label="Library Location" :value="initialData?.location || ''" />
 
     <Select

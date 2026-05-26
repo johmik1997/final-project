@@ -111,13 +111,27 @@
             <input
               v-model="searchQuery"
               type="text"
-              placeholder="Search by title, author, category, or ISBN..."
+              placeholder="Search by title, author, ISBN, or barcode..."
               class="search-input"
             />
-            <button v-if="searchQuery" @click="clearSearch" class="clear-btn">
+            <button
+              type="button"
+              class="scan-btn"
+              :class="{ active: showBarcodeScanner }"
+              title="Scan barcode"
+              @click="showBarcodeScanner = !showBarcodeScanner"
+            >
+              <BaseIcon :path="mdiBarcode" size="18" />
+            </button>
+            <button v-if="searchQuery" type="button" @click="clearSearch" class="clear-btn">
               <BaseIcon :path="mdiClose" size="16" />
             </button>
           </div>
+          <BarcodeScanner
+            v-if="showBarcodeScanner && activeType === 'physical'"
+            :active="showBarcodeScanner"
+            @scan="(code) => { searchQuery = code; showBarcodeScanner = false }"
+          />
 
           <div class="filter-selects">
             <select v-model="selectedCategory" class="filter-select">
@@ -390,11 +404,13 @@ import {
   mdiClockOutline,
   mdiViewDashboard,
   mdiFormatListBulleted,
-  mdiUpload
+  mdiUpload,
+  mdiBarcode
 } from '@mdi/js'
 import { usePaginations } from '@/composables/usePaginationTemp'
 import defaultCover from '@/assets/default-coverpage.png'
 import { emitEntityMutation, subscribeEntityMutation } from '@/utils/entitySync'
+import BarcodeScanner from '@/components/BarcodeScanner.vue'
 
 const materialStore = useMaterials()
 const router = useRouter()
@@ -403,6 +419,7 @@ const viewMode = ref('grid')
 const searchQuery = ref('')
 const selectedCategory = ref('')
 const selectedCondition = ref('')
+const showBarcodeScanner = ref(false)
 
 const showImportModal = ref(false)
 const selectedFile = ref(null)
@@ -528,10 +545,10 @@ const typeFilteredRows = computed(() => {
     if (activeType.value === 'physical') {
       const loc = String(row?.location || '').toUpperCase().trim()
       if (loc === 'SHELF') {
-        return userRole.value === 'FRONT DESK STAFF'
+        return ['FRONT DESK STAFF', 'ADMIN', 'SUPER ADMIN', 'TECHNICAL STAFF'].includes(userRole.value)
       }
       if (loc === 'STACK') {
-        return userRole.value === 'STACK STAFF'
+        return ['STACK STAFF', 'ADMIN', 'SUPER ADMIN', 'TECHNICAL STAFF'].includes(userRole.value)
       }
     }
     return true
@@ -554,7 +571,7 @@ const filteredRows = computed(() => {
 
   if (query) {
     rows = rows.filter((row) =>
-      [row?.title, row?.author, row?.category, row?.genre, row?.isbn]
+      [row?.title, row?.author, row?.category, row?.genre, row?.isbn, row?.barcode]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(query))
     )
@@ -1063,8 +1080,9 @@ function remove(id) {
 }
 
 .search-input {
-  width: 75%;
-  padding: 0.625rem 2rem 0.625rem 2.25rem;
+  width: 100%;
+  padding: 0.625rem 5.25rem 0.625rem 2.25rem;
+  box-sizing: border-box;
   border-radius: 0.75rem;
   border: 1px solid rgba(203, 213, 225, 0.5);
   background: rgba(255, 255, 255, 0.5);
@@ -1082,6 +1100,37 @@ function remove(id) {
   outline: none;
   border-color: #f59e0b;
   box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.1);
+}
+
+.scan-btn {
+  position: absolute;
+  right: 2.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(203, 213, 225, 0.6);
+  background: rgba(255, 255, 255, 0.9);
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.scan-btn:hover,
+.scan-btn.active {
+  border-color: #f59e0b;
+  color: #d97706;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.dark .scan-btn {
+  background: rgba(30, 41, 59, 0.9);
+  border-color: rgba(51, 65, 85, 0.6);
+  color: #cbd5e1;
 }
 
 .clear-btn {

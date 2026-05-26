@@ -225,25 +225,39 @@ onBeforeUnmount(() => {
 <template>
   <div class="space-y-6 p-4 sm:p-7 dark:bg-slate-950">
     <!-- Hero Section -->
-    <section class="rounded-[28px] border border-slate-200 dark:border-slate-800 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.22),_transparent_42%),linear-gradient(135deg,_#0f172a,_#1d4ed8_58%,_#93c5fd)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.3),_transparent_42%),linear-gradient(135deg,_#0f172a,_#1e3a8a_58%,_#3b82f6)] p-6 text-white shadow-xl">
-      <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div class="max-w-2xl">
-          <p class="text-xs font-semibold uppercase tracking-[0.32em] text-sky-100/80 dark:text-sky-200/80">Circulation Desk</p>
-          <h1 class="mt-3 text-3xl font-bold tracking-tight">Process returns without losing the payment workflow.</h1>
-          <p class="mt-3 text-sm text-slate-100/85 dark:text-slate-200/85">
-            Regular returns can close immediately. Overdue borrows create a fine settlement first, and the return only finishes after payment verification.
-          </p>
-        </div>
+<section class="rounded-[28px] border border-slate-200 dark:border-slate-800 bg-[linear-gradient(135deg,_rgba(245,158,11,0.15),_rgba(239,68,68,0.1))] p-6 shadow-xl">
 
-        <button
-          class="inline-flex items-center gap-2 rounded-full bg-white/14 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/22 dark:bg-white/10 dark:hover:bg-white/20"
-          @click="loadPage"
-        >
-          <BaseIcon :path="mdiRefresh" size="18" />
-          Refresh
-        </button>
-      </div>
-    </section>
+  <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    
+    <div class="max-w-2xl">
+      
+      <!-- Small Top Text -->
+      <p class="text-xs font-semibold uppercase tracking-[0.32em] text-slate-500 dark:text-slate-400">
+        Circulation Desk
+      </p>
+
+      <!-- Title -->
+      <h1 class="mt-3 text-3xl font-bold tracking-tight bg-gradient-to-r from-amber-500 to-yellow-400 bg-clip-text text-transparent">
+        Process returns without losing the payment workflow.
+      </h1>
+
+      <!-- Description -->
+      <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">
+        Regular returns can close immediately. Overdue borrows create a fine settlement first, and the return only finishes after payment verification.
+      </p>
+    </div>
+
+    <!-- Refresh Button -->
+    <button
+      class="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-600 shadow-md"
+      @click="loadPage"
+    >
+      <BaseIcon :path="mdiRefresh" size="18" />
+      Refresh
+    </button>
+
+  </div>
+</section>
 
     <!-- Stats Cards -->
     <section class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -361,7 +375,7 @@ onBeforeUnmount(() => {
     </section>
 
     <!-- Outstanding Fine Settlements Section -->
-    <section class="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm">
+    <!-- <section class="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm">
       <div class="flex flex-col gap-2">
         <h2 class="text-xl font-semibold text-slate-900 dark:text-white">Outstanding fine settlements</h2>
         <p class="text-sm text-slate-500 dark:text-slate-400">These returns stay incomplete until the overdue payment is verified.</p>
@@ -406,6 +420,6 @@ onBeforeUnmount(() => {
           </template>
         </Table>
       </div>
-    </section>
+    </section> -->
   </div>
 </template>
