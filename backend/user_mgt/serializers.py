@@ -13,6 +13,7 @@ from django.contrib.auth.password_validation import validate_password
 from rest_framework.exceptions import ValidationError
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from material_mgt.cache import invalidate_library_caches
 from transactions.models import Borrow, Reservation
 from .access import get_user_library, is_super_admin, normalize_role
 from .models import Library, LibraryPolicy, Notification, User
@@ -250,6 +251,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
                 pass
 
         threading.Thread(target=_email_runner, daemon=True).start()
+        invalidate_library_caches()
         return user
 
 
@@ -536,6 +538,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             instance.user_type = user_type
         instance.save()
 
+        invalidate_library_caches()
         return instance
 
 

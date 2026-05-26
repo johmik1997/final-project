@@ -4,6 +4,7 @@ from typing import List
 from django.utils import timezone
 from django.db import transaction
 
+from material_mgt.cache import invalidate_material_caches
 from .models import Borrow, Reservation
 from user_mgt.access import get_active_library_policy
 from material_mgt.services import send_templated_email_background
@@ -178,6 +179,7 @@ def finalize_return_for_borrow(borrow):
         locked_borrow.save(update_fields=["status"])
 
         transaction.on_commit(lambda: notify_reserved_members_material_available(material))
+        transaction.on_commit(invalidate_material_caches)
         return locked_borrow
 
 

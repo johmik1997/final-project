@@ -6,6 +6,7 @@ from rest_framework import status
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 from django.utils import timezone
 from django.http import HttpResponse
+from material_mgt.cache import invalidate_material_caches
 from material_mgt.models import *
 from user_mgt.access import get_user_library, is_super_admin, normalize_role
 from .serializers import *
@@ -105,7 +106,9 @@ class BorrowViewSet(ModelViewSet):
             material = borrow.material
             if material:
                 material.available_copies = min(material.total_copies, (material.available_copies or 0) + 1)
+                material.save(update_fields=["available_copies"])
         borrow.delete()
+        invalidate_material_caches()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['get'])
@@ -228,5 +231,5 @@ class CirculationViewSet(ModelViewSet):
             
         from django.db import transaction as db_transaction
         db_transaction.on_commit(lambda: notify_circulation_return_success(circulation))
+        db_transaction.on_commit(invalidate_material_caches)
         return Response({"success": True, "message": "Material returned successfully."})
-

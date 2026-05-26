@@ -1,21 +1,25 @@
 <script setup>
-import { computed, ref, toRaw } from 'vue';
-import Button from '@/components/Button.vue';
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import Input from '@/components/new_form_elements/Input.vue';
 import Select from '@/components/new_form_elements/Select.vue';
+import Textarea from '@/components/new_form_elements/Textarea.vue';
 import Form from '@/components/new_form_builder/Form.vue';
 import BarcodeScanner from '@/components/BarcodeScanner.vue';
 import { closeModal } from '@customizer/modal-x';
 import { useApiRequest } from '@/composables/useApiRequest';
-import { CreateMaterial, lookupMaterialBarcode } from '../api/materialApi';
+import {
+  CreateMaterial,
+  createMobileScanSession,
+  getMobileScanSession,
+  lookupMaterialBarcode,
+} from '../api/materialApi';
 import { toasted } from '@/utils/utils';
 import { useForm } from '@/components/new_form_builder/useForm';
 import { useMaterials } from '../store/materialStore';
 import { emitEntityMutation } from '@/utils/entitySync';
 import { getAllLibrary } from '@/features/library/api/libraryApi';
-import { setFormFieldValue } from '@/utils/formFieldHelpers';
 import BaseIcon from '@/components/base/BaseIcon.vue';
-import { mdiBarcode, mdiClose } from '@mdi/js';
+import { mdiBarcode, mdiCellphone, mdiClose, mdiContentCopy, mdiMagnify } from '@mdi/js';
 
 const { submit } = useForm('addMaterialForm');
 const req = useApiRequest();
@@ -25,6 +29,10 @@ const currentStep = ref(1);
 const totalSteps = computed(() => 3);
 const showBarcodeScanner = ref(false);
 const lookupPending = ref(false);
+const mobileScanSession = ref(null);
+const mobileSessionPending = ref(false);
+const mobileLinkCopied = ref(false);
+let mobileSessionPollTimer = null;
 
 const currentType = computed(() => materialStore.createType || 'physical');
 const isDigital = computed(() => currentType.value === 'digital');
@@ -45,6 +53,25 @@ const isSuperAdmin = computed(() => {
   return role === 'SUPERADMIN';
 });
 
+const prefillData = reactive({
+  title: '',
+  author: '',
+  isbn: '',
+  barcode: '',
+  published_date: '',
+  category: '',
+  genre: '',
+  language: '',
+  department: '',
+  description: '',
+  library: '',
+  location: '',
+  condition: '',
+  total_copies: '',
+  price: '',
+  can_borrow: '',
+});
+
 const steps = computed(() => {
   const baseSteps = [
     { number: 1, title: 'Basic Information', icon: '📚' },
@@ -57,6 +84,31 @@ const steps = computed(() => {
 
 libraryReq.send(() => getAllLibrary({ page: 1, size: 200 }));
 
+watch(
+  userLibraryId,
+  (value) => {
+    if (value && !String(prefillData.library || '').trim()) {
+      prefillData.library = value;
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  isDigital,
+  (digital) => {
+    if (!digital) {
+      if (!String(prefillData.total_copies || '').trim()) prefillData.total_copies = '1';
+      if (!String(prefillData.condition || '').trim()) prefillData.condition = 'NEW';
+      if (!String(prefillData.location || '').trim()) prefillData.location = 'STACK';
+      if (!String(prefillData.can_borrow || '').trim()) prefillData.can_borrow = 'YES';
+    } else {
+      prefillData.barcode = '';
+    }
+  },
+  { immediate: true }
+);
+
 function toDateInputValue(value) {
   if (!value) return '';
   if (typeof value === 'string') return value.slice(0, 10);
@@ -65,40 +117,128 @@ function toDateInputValue(value) {
   return date.toISOString().slice(0, 10);
 }
 
-function unwrapRaw(value) {
-  if (!value || typeof value !== 'object') return value;
+function normalizePrefillValue(name, value) {
+  if (value === undefined || value === null) return '';
+  if (name === 'published_date') return toDateInputValue(value);
+  if (name === 'can_borrow') {
+    if (value === true) return 'YES';
+    if (value === false) return 'NO';
+    const normalized = String(value || '').trim().toUpperCase();
+    return normalized === 'TRUE' ? 'YES' : normalized === 'FALSE' ? 'NO' : normalized;
+  }
+  return String(value);
+}
+
+function setPrefillValues(values = {}, options = {}) {
+  const onlyIfBlank = Boolean(options.onlyIfBlank);
+  Object.entries(values).forEach(([name, rawValue]) => {
+    const nextValue = normalizePrefillValue(name, rawValue);
+    if (!Object.hasOwn(prefillData, name) || nextValue === '') return;
+    if (onlyIfBlank && String(prefillData[name] || '').trim()) return;
+    prefillData[name] = nextValue;
+  });
+}
+
+function getLookupCode() {
+  if (isDigital.value) {
+    return String(prefillData.isbn || '').trim();
+  }
+  return String(prefillData.barcode || prefillData.isbn || '').trim();
+}
+
+function formatLookupSourceLabel(source) {
+  const normalized = String(source || '').trim().toLowerCase();
+  if (normalized === 'library') return 'existing library record';
+  if (normalized === 'openlibrary') return 'Open Library';
+  if (normalized === 'google_books') return 'Google Books';
+  return 'book metadata service';
+}
+
+function stopMobileSessionPolling() {
+  if (mobileSessionPollTimer) {
+    window.clearInterval(mobileSessionPollTimer);
+    mobileSessionPollTimer = null;
+  }
+}
+
+function clearMobileScanSession() {
+  stopMobileSessionPolling();
+  mobileScanSession.value = null;
+  mobileSessionPending.value = false;
+  mobileLinkCopied.value = false;
+}
+
+const mobileScanUrl = computed(() => {
+  const sessionId = mobileScanSession.value?.session_id;
+  if (!sessionId || typeof window === 'undefined') return '';
+  return `${window.location.origin}/mobile-scanner/${sessionId}`;
+});
+
+onBeforeUnmount(() => {
+  stopMobileSessionPolling();
+});
+
+async function copyMobileScanLink() {
+  if (!mobileScanUrl.value) return;
   try {
-    return toRaw(value);
+    await navigator.clipboard.writeText(mobileScanUrl.value);
+    mobileLinkCopied.value = true;
+    toasted(true, 'Phone scanner link copied');
+    window.setTimeout(() => {
+      mobileLinkCopied.value = false;
+    }, 1600);
   } catch {
-    return value;
+    toasted(false, '', 'Could not copy the phone scanner link.');
   }
 }
 
-function isFileLike(value) {
-  return Boolean(
-    value &&
-    typeof value === 'object' &&
-    typeof value.name === 'string' &&
-    typeof value.size === 'number' &&
-    typeof value.type === 'string' &&
-    typeof value.arrayBuffer === 'function'
-  );
+function syncScannedCode(scannedCode) {
+  const normalized = String(scannedCode || '').trim();
+  if (!normalized) return;
+  const digitsOnly = normalized.replace(/\D/g, '');
+
+  if (isDigital.value) {
+    setPrefillValues({ isbn: digitsOnly.length === 10 || digitsOnly.length === 13 ? digitsOnly : normalized });
+    return;
+  }
+
+  setPrefillValues({ barcode: normalized });
+  if (digitsOnly.length === 10 || digitsOnly.length === 13) {
+    setPrefillValues({ isbn: digitsOnly });
+  }
 }
 
-function normalizeUploadFile(value) {
-  const raw = unwrapRaw(value);
-  if (!raw) return null;
-  if (raw instanceof File || isFileLike(raw)) return raw;
-  if (typeof FileList !== 'undefined' && raw instanceof FileList) {
-    return raw.length ? unwrapRaw(raw[0]) : null;
+function applyLookupData(data = {}, options = {}) {
+  const source = String(options.source || '').trim().toLowerCase();
+  const scannedCode = String(options.scannedCode || '').trim();
+  const digitsOnly = scannedCode.replace(/\D/g, '');
+
+  setPrefillValues({
+    title: data.title,
+    author: data.author,
+    isbn: data.isbn || (digitsOnly.length === 10 || digitsOnly.length === 13 ? digitsOnly : ''),
+    barcode: data.barcode || (!isDigital.value ? scannedCode : ''),
+    published_date: data.published_date,
+    category: data.category,
+    genre: data.genre,
+    language: data.language,
+    department: data.department,
+    description: data.description,
+  });
+
+  if (!isDigital.value) {
+    setPrefillValues(
+      {
+        library: data.library,
+        total_copies: data.total_copies || 1,
+        condition: data.condition || 'NEW',
+        location: data.location || 'STACK',
+        can_borrow: data.can_borrow ?? 'YES',
+        price: data.price,
+      },
+      { onlyIfBlank: source !== 'library' }
+    );
   }
-  if (Array.isArray(raw)) {
-    return normalizeUploadFile(raw[0]);
-  }
-  if (typeof raw === 'object' && raw[0]) {
-    return normalizeUploadFile(raw[0]);
-  }
-  return null;
 }
 
 function nextStep() {
@@ -166,6 +306,7 @@ function handleCreate({ values }) {
     payload.append('department', values.department || '');
     payload.append('language', values.language || '');
     payload.append('isbn', values.isbn || '');
+    payload.append('description', values.description || '');
     if (values.library) {
       payload.append('library', values.library);
     }
@@ -226,21 +367,35 @@ function validateAndNext() {
   nextStep();
 }
 
-function applyLookupData(data = {}) {
-  const fields = {
-    title: data.title,
-    author: data.author,
-    isbn: data.isbn,
-    published_date: data.published_date ? String(data.published_date).slice(0, 10) : '',
-    category: data.category,
-    genre: data.genre,
-    language: data.language,
-    department: data.department,
-  };
+async function lookupScannedMaterial(rawCode, options = {}) {
+  const code = String(rawCode || '').trim();
+  if (!code) {
+    toasted(false, '', 'Enter or scan an ISBN or barcode first.');
+    return;
+  }
 
-  Object.entries(fields).forEach(([name, value]) => {
-    if (value) setFormFieldValue('addMaterialForm', name, value);
-  });
+  lookupPending.value = true;
+  try {
+    const res = await lookupMaterialBarcode(code);
+    const payload = res?.data || res;
+
+    if (payload?.found && payload?.data) {
+      applyLookupData(payload.data, {
+        scannedCode: code,
+        source: payload.source,
+      });
+      toasted(true, `Book details loaded from ${formatLookupSourceLabel(payload.source)}`);
+      return;
+    }
+
+    if (!options.silentNotFound) {
+      toasted(false, '', 'No book metadata found for this code. You can continue manually.');
+    }
+  } catch {
+    toasted(false, '', 'Could not look up metadata for this code.');
+  } finally {
+    lookupPending.value = false;
+  }
 }
 
 async function handleBarcodeScan(code) {
@@ -248,25 +403,62 @@ async function handleBarcodeScan(code) {
   if (!scanned) return;
 
   showBarcodeScanner.value = false;
-  setFormFieldValue('addMaterialForm', 'isbn', scanned);
-  lookupPending.value = true;
+  syncScannedCode(scanned);
+  clearMobileScanSession();
+  await lookupScannedMaterial(scanned, { silentNotFound: false });
+}
 
+async function refreshMobileScanSession(sessionId, options = {}) {
+  if (!sessionId) return;
   try {
-    const res = await lookupMaterialBarcode(scanned);
-    const payload = res?.data || res;
-
-    if (payload?.found && payload?.data) {
-      applyLookupData(payload.data);
-      const sourceLabel = payload.source === 'library' ? 'existing library record' : 'ISBN database';
-      toasted(true, `Book details loaded from ${sourceLabel}`);
+    const res = await getMobileScanSession(sessionId);
+    if (!res?.success) {
+      if (options.notifyOnError) {
+        toasted(false, '', res?.error || 'Phone scanner session expired.');
+      }
+      clearMobileScanSession();
       return;
     }
 
-    toasted(false, 'No book metadata found for this barcode. Enter details manually.');
+    const payload = res?.data || res;
+    mobileScanSession.value = payload;
+    if (payload?.status === 'scanned' && payload?.code) {
+      stopMobileSessionPolling();
+      await handleBarcodeScan(payload.code);
+    }
   } catch {
-    toasted(false, 'Could not look up barcode. Enter details manually.');
+    if (options.notifyOnError) {
+      toasted(false, '', 'Could not refresh the phone scanner session.');
+    }
+    clearMobileScanSession();
+  }
+}
+
+function startMobileSessionPolling(sessionId) {
+  stopMobileSessionPolling();
+  refreshMobileScanSession(sessionId);
+  mobileSessionPollTimer = window.setInterval(() => {
+    refreshMobileScanSession(sessionId);
+  }, 2000);
+}
+
+async function startMobileScanSession() {
+  mobileSessionPending.value = true;
+  try {
+    const res = await createMobileScanSession();
+    if (!res?.success) {
+      toasted(false, '', res?.error || 'Could not start phone scanner session.');
+      return;
+    }
+
+    mobileScanSession.value = res?.data || res;
+    mobileLinkCopied.value = false;
+    startMobileSessionPolling(mobileScanSession.value?.session_id);
+    toasted(true, 'Phone scanner session is ready.');
+  } catch {
+    toasted(false, '', 'Could not start phone scanner session.');
   } finally {
-    lookupPending.value = false;
+    mobileSessionPending.value = false;
   }
 }
 </script>

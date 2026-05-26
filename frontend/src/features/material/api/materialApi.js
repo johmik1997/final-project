@@ -55,6 +55,18 @@ export function lookupMaterialBarcode(code) {
   return api.addAuthenticationHeader().get(`/material/lookup-barcode/${qr}`);
 }
 
+export function createMobileScanSession() {
+  return api.addAuthenticationHeader().post('/material/mobile-scan/sessions/', {});
+}
+
+export function getMobileScanSession(sessionId) {
+  return api.get(`/material/mobile-scan/sessions/${sessionId}/`);
+}
+
+export function submitMobileScanSession(sessionId, payload = {}) {
+  return api.post(`/material/mobile-scan/sessions/${sessionId}/submit/`, payload);
+}
+
 export function sendLibraryAssistantMessage(payload = {}) {
   return api.addAuthenticationHeader().post("/material/assistant-chat/", payload);
 }

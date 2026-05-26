@@ -6,12 +6,15 @@ const props = defineProps({
   active: { type: Boolean, default: false },
   /** Minimum ms between duplicate scan emissions */
   scanCooldownMs: { type: Number, default: 1500 },
+  allowImageUpload: { type: Boolean, default: true },
+  captureMode: { type: String, default: 'environment' },
 });
 
 const emit = defineEmits(['scan', 'error']);
 
 const scannerId = `barcode-scanner-${Math.random().toString(36).slice(2, 9)}`;
 const isStarting = ref(false);
+const isScanningFile = ref(false);
 const scannerError = ref('');
 let scanner = null;
 let lastScannedCode = '';
@@ -71,6 +74,13 @@ async function stopScanner() {
   scanner = null;
 }
 
+function getScannerInstance() {
+  if (!scanner) {
+    scanner = new Html5Qrcode(scannerId, { formatsToSupport: BARCODE_FORMATS });
+  }
+  return scanner;
+}
+
 async function startScanner() {
   scannerError.value = '';
   await stopScanner();
@@ -79,9 +89,9 @@ async function startScanner() {
   isStarting.value = true;
   try {
     const scanBox = getScanBoxSize();
-    scanner = new Html5Qrcode(scannerId, { formatsToSupport: BARCODE_FORMATS });
-    await scanner.start(
-      { facingMode: 'environment' },
+    const reader = getScannerInstance();
+    await reader.start(
+      { facingMode: props.captureMode },
       {
         fps: 15,
         qrbox: scanBox,
@@ -104,6 +114,35 @@ async function startScanner() {
     emit('error', scannerError.value);
   } finally {
     isStarting.value = false;
+  }
+}
+
+async function handleImageSelection(event) {
+  const file = event?.target?.files?.[0];
+  if (!file) return;
+
+  scannerError.value = '';
+  isScanningFile.value = true;
+
+  try {
+    await stopScanner();
+    const reader = getScannerInstance();
+    const decodedText = await reader.scanFile(file, true);
+    const code = normalizeScannedCode(decodedText);
+    if (!code || !shouldEmitScan(code)) return;
+    emit('scan', code);
+    await stopScanner();
+  } catch (error) {
+    scannerError.value = error?.message || 'Unable to read a barcode from that image.';
+    emit('error', scannerError.value);
+    if (props.active) {
+      await startScanner();
+    }
+  } finally {
+    isScanningFile.value = false;
+    if (event?.target) {
+      event.target.value = '';
+    }
   }
 }
 
@@ -134,7 +173,19 @@ onBeforeUnmount(() => {
 <template>
   <div v-if="active" class="barcode-scanner">
     <div :id="scannerId" class="scanner-viewport" />
+    <div v-if="allowImageUpload" class="scanner-actions">
+      <label class="scanner-upload">
+        <input
+          type="file"
+          accept="image/*"
+          :capture="captureMode"
+          @change="handleImageSelection"
+        />
+        Use photo instead
+      </label>
+    </div>
     <p v-if="isStarting" class="scanner-hint">Starting camera...</p>
+    <p v-else-if="isScanningFile" class="scanner-hint">Reading barcode from image...</p>
     <p v-else-if="scannerError" class="scanner-error">{{ scannerError }}</p>
     <p v-else class="scanner-hint">Align the barcode inside the frame and hold steady</p>
   </div>
@@ -159,6 +210,30 @@ onBeforeUnmount(() => {
 
 .scanner-viewport :deep(video) {
   object-fit: cover;
+}
+
+.scanner-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.75rem;
+}
+
+.scanner-upload {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: white;
+  color: #92400e;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.5rem 0.9rem;
+}
+
+.scanner-upload input {
+  display: none;
 }
 
 .scanner-hint {

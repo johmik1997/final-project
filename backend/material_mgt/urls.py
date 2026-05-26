@@ -9,6 +9,9 @@ from .views import (
     MaterialFavoriteViewSet,
     MaterialFeedbackViewSet,
     MaterialInteractionStatsAPIView,
+    MobileScanSessionCreateAPIView,
+    MobileScanSessionStatusAPIView,
+    MobileScanSessionSubmitAPIView,
     PhysicalMaterialViewSet,
     MaterialTransferRequestViewSet,
     BarcodeImageAPIView,
@@ -29,8 +32,10 @@ urlpatterns = [
     path("generate-description/", GenerateMaterialDescriptionAPIView.as_view(), name="generate-material-description"),
     path("interactions/stats/", MaterialInteractionStatsAPIView.as_view(), name="material-interaction-stats"),
     path("lookup-barcode/", MaterialBarcodeLookupAPIView.as_view(), name="material-barcode-lookup"),
+    path("mobile-scan/sessions/", MobileScanSessionCreateAPIView.as_view(), name="material-mobile-scan-session-create"),
+    path("mobile-scan/sessions/<uuid:session_id>/", MobileScanSessionStatusAPIView.as_view(), name="material-mobile-scan-session-status"),
+    path("mobile-scan/sessions/<uuid:session_id>/submit/", MobileScanSessionSubmitAPIView.as_view(), name="material-mobile-scan-session-submit"),
     path("barcode/<uuid:pk>/", BarcodeImageAPIView.as_view(), name="barcode-image"),
     path("physical-materials/import-xls/", PhysicalMaterialXLSImportAPIView.as_view(), name="physical-material-import-xls"),
     path("", include(router.urls)),
 ]
-

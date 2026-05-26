@@ -10,6 +10,8 @@ from rest_framework.viewsets import ModelViewSet
 from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from django.db.models import Q
 
+from ebook.cache_utils import CachedListRetrieveMixin, cache_api_response
+from material_mgt.cache import LIBRARY_CACHE_NAMESPACE, invalidate_library_caches
 from .access import get_user_library, is_admin_like, is_super_admin, normalize_role
 from .models import Library, User, LibraryPolicy, Notification
 from .permissions import CanCreateUsers, CanDeleteUsers, IsSuperAdminForWrite
@@ -150,10 +152,11 @@ class ResetPasswordAPIView(APIView):
 
 # --- Library Management ---
 
-class LibraryViewSet(ModelViewSet):
+class LibraryViewSet(CachedListRetrieveMixin, ModelViewSet):
     queryset = Library.objects.all()
     serializer_class = LibrarySerializer
     permission_classes = [IsAuthenticated, IsSuperAdminForWrite]
+    retrieve_cache_namespace = LIBRARY_CACHE_NAMESPACE
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -166,6 +169,13 @@ class LibraryViewSet(ModelViewSet):
         return queryset.filter(pk=actor_library.pk)
 
     def list(self, request, *args, **kwargs):
+        return cache_api_response(
+            LIBRARY_CACHE_NAMESPACE,
+            request,
+            lambda: self._list_uncached(request, *args, **kwargs),
+        )
+
+    def _list_uncached(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
         if is_super_admin(request.user):
             staffs = (
@@ -200,6 +210,18 @@ class LibraryViewSet(ModelViewSet):
 
         serializer = self.get_serializer(queryset, many=True)
         return Response({"libraries": serializer.data, "admin_staffs": admin_staffs}, status=status.HTTP_200_OK)
+
+    def perform_create(self, serializer):
+        serializer.save()
+        invalidate_library_caches()
+
+    def perform_update(self, serializer):
+        serializer.save()
+        invalidate_library_caches()
+
+    def perform_destroy(self, instance):
+        instance.delete()
+        invalidate_library_caches()
 
 
 class LibraryPolicyViewSet(ModelViewSet):
@@ -251,6 +273,10 @@ class UserCreateAPIView(CreateAPIView):
 class UserDeleteAPIView(DestroyAPIView):
     queryset = User.objects.all()
     permission_classes = [IsAuthenticated, CanDeleteUsers]
+
+    def perform_destroy(self, instance):
+        instance.delete()
+        invalidate_library_caches()
 
 
 @extend_schema(
