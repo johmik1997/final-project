@@ -58,6 +58,14 @@ export default [
     roles: ["ADMIN", "SUPER ADMIN", "STACK STAFF"],
   },
   {
+    path: "/overdue-letters",
+    name: "Overdue Letters",
+    icon: icons.report,
+    meta: { requiresAuth: true, permissions: [] },
+    type: "Management",
+    roles: ["ADMIN", "SUPER ADMIN", "STACK STAFF"],
+  },
+  {
     path: "/my-borrows",
     name: "My Borrows",
     icon: icons.borrow,

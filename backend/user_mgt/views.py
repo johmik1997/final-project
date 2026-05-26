@@ -13,9 +13,11 @@ from django.db.models import Q
 from ebook.cache_utils import CachedListRetrieveMixin, cache_api_response
 from material_mgt.cache import LIBRARY_CACHE_NAMESPACE, invalidate_library_caches
 from .access import get_user_library, is_admin_like, is_super_admin, normalize_role
-from .models import Library, User, LibraryPolicy, Notification
+from .models import CampusStudent, Library, User, LibraryPolicy, Notification
 from .permissions import CanCreateUsers, CanDeleteUsers, IsSuperAdminForWrite
 from .serializers import (
+    CampusStudentSerializer,
+    StudentSelfRegisterSerializer,
     AdminUserListSerializer,
     ChangePasswordSerializer,
     FirstLoginChangePasswordSerializer,
@@ -148,6 +150,60 @@ class ResetPasswordAPIView(APIView):
         # Clean up the session cookie after success
         response.delete_cookie("password_reset_confirm_token")
         return response
+
+
+class StudentSelfRegisterAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        request=StudentSelfRegisterSerializer,
+        responses={201: UserMeSerializer},
+    )
+    def post(self, request):
+        serializer = StudentSelfRegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        payload = UserMeSerializer(user, context={"request": request}).data
+        return Response(
+            {
+                "detail": "Registration successful. You can now sign in with your student ID.",
+                "user": payload,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class CampusStudentViewSet(ModelViewSet):
+    queryset = CampusStudent.objects.all().order_by("id_number")
+    serializer_class = CampusStudentSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ["id_number", "full_name", "phone", "department"]
+
+    def _ensure_write_access(self):
+        if not is_admin_like(self.request.user):
+            raise ValidationError("Only ADMIN or SUPER ADMIN can manage campus student records.")
+
+    def get_permissions(self):
+        if self.action in ["list", "retrieve"]:
+            return [IsAuthenticated()]
+        return super().get_permissions()
+
+    def create(self, request, *args, **kwargs):
+        self._ensure_write_access()
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        self._ensure_write_access()
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        self._ensure_write_access()
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        self._ensure_write_access()
+        return super().destroy(request, *args, **kwargs)
 
 
 # --- Library Management ---

@@ -5,8 +5,14 @@ import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 const props = defineProps({
   active: { type: Boolean, default: false },
   /** Minimum ms between duplicate scan emissions */
-  scanCooldownMs: { type: Number, default: 1500 },
-  allowImageUpload: { type: Boolean, default: true },
+  scanCooldownMs: { type: Number, default: 2500 },
+  /** Same code must be read this many times before emitting */
+  minStableReads: { type: Number, default: 4 },
+  /** Minimum time the same code must stay visible (ms) */
+  stabilityMs: { type: Number, default: 900 },
+  /** Stop the camera after a confirmed scan */
+  autoStop: { type: Boolean, default: true },
+  allowImageUpload: { type: Boolean, default: false },
   captureMode: { type: String, default: 'environment' },
 });
 
@@ -14,11 +20,14 @@ const emit = defineEmits(['scan', 'error']);
 
 const scannerId = `barcode-scanner-${Math.random().toString(36).slice(2, 9)}`;
 const isStarting = ref(false);
-const isScanningFile = ref(false);
 const scannerError = ref('');
+const scanStatus = ref('idle'); // idle | tracking | ready
 let scanner = null;
 let lastScannedCode = '';
 let lastScannedAt = 0;
+let stableCandidate = '';
+let stableCount = 0;
+let stableFirstSeenAt = 0;
 
 const BARCODE_FORMATS = [
   Html5QrcodeSupportedFormats.CODE_128,
@@ -44,6 +53,13 @@ function normalizeScannedCode(raw) {
   return text;
 }
 
+function resetStabilityTracking() {
+  stableCandidate = '';
+  stableCount = 0;
+  stableFirstSeenAt = 0;
+  scanStatus.value = 'idle';
+}
+
 function shouldEmitScan(code) {
   const now = Date.now();
   if (code === lastScannedCode && now - lastScannedAt < props.scanCooldownMs) {
@@ -52,6 +68,39 @@ function shouldEmitScan(code) {
   lastScannedCode = code;
   lastScannedAt = now;
   return true;
+}
+
+function processDecodedText(raw) {
+  const code = normalizeScannedCode(raw);
+  if (!code) return;
+
+  const now = Date.now();
+  if (code !== stableCandidate) {
+    stableCandidate = code;
+    stableCount = 1;
+    stableFirstSeenAt = now;
+    scanStatus.value = 'tracking';
+    return;
+  }
+
+  stableCount += 1;
+  const heldMs = now - stableFirstSeenAt;
+  if (stableCount < props.minStableReads || heldMs < props.stabilityMs) {
+    scanStatus.value = 'tracking';
+    return;
+  }
+
+  if (!shouldEmitScan(code)) {
+    resetStabilityTracking();
+    return;
+  }
+
+  scanStatus.value = 'ready';
+  emit('scan', code);
+  resetStabilityTracking();
+  if (props.autoStop) {
+    stopScanner();
+  }
 }
 
 function getScanBoxSize() {
@@ -93,7 +142,7 @@ async function startScanner() {
     await reader.start(
       { facingMode: props.captureMode },
       {
-        fps: 15,
+        fps: 10,
         qrbox: scanBox,
         aspectRatio: 1.777,
         disableFlip: false,
@@ -102,10 +151,7 @@ async function startScanner() {
         },
       },
       (decodedText) => {
-        const code = normalizeScannedCode(decodedText);
-        if (!code || !shouldEmitScan(code)) return;
-        emit('scan', code);
-        stopScanner();
+        processDecodedText(decodedText);
       },
       () => {}
     );
@@ -117,43 +163,16 @@ async function startScanner() {
   }
 }
 
-async function handleImageSelection(event) {
-  const file = event?.target?.files?.[0];
-  if (!file) return;
-
-  scannerError.value = '';
-  isScanningFile.value = true;
-
-  try {
-    await stopScanner();
-    const reader = getScannerInstance();
-    const decodedText = await reader.scanFile(file, true);
-    const code = normalizeScannedCode(decodedText);
-    if (!code || !shouldEmitScan(code)) return;
-    emit('scan', code);
-    await stopScanner();
-  } catch (error) {
-    scannerError.value = error?.message || 'Unable to read a barcode from that image.';
-    emit('error', scannerError.value);
-    if (props.active) {
-      await startScanner();
-    }
-  } finally {
-    isScanningFile.value = false;
-    if (event?.target) {
-      event.target.value = '';
-    }
-  }
-}
-
 watch(
   () => props.active,
   (active) => {
     if (active) {
       lastScannedCode = '';
       lastScannedAt = 0;
+      resetStabilityTracking();
       startScanner();
     } else {
+      resetStabilityTracking();
       stopScanner();
     }
   }
@@ -173,21 +192,13 @@ onBeforeUnmount(() => {
 <template>
   <div v-if="active" class="barcode-scanner">
     <div :id="scannerId" class="scanner-viewport" />
-    <div v-if="allowImageUpload" class="scanner-actions">
-      <label class="scanner-upload">
-        <input
-          type="file"
-          accept="image/*"
-          :capture="captureMode"
-          @change="handleImageSelection"
-        />
-        Use photo instead
-      </label>
-    </div>
     <p v-if="isStarting" class="scanner-hint">Starting camera...</p>
-    <p v-else-if="isScanningFile" class="scanner-hint">Reading barcode from image...</p>
     <p v-else-if="scannerError" class="scanner-error">{{ scannerError }}</p>
-    <p v-else class="scanner-hint">Align the barcode inside the frame and hold steady</p>
+    <p v-else-if="scanStatus === 'tracking'" class="scanner-hint scanner-hint-tracking">
+      Hold the barcode steady in the frame…
+    </p>
+    <p v-else-if="scanStatus === 'ready'" class="scanner-hint scanner-hint-ready">Barcode confirmed</p>
+    <p v-else class="scanner-hint">Align the barcode inside the frame and hold steady for a moment</p>
   </div>
 </template>
 
@@ -212,35 +223,21 @@ onBeforeUnmount(() => {
   object-fit: cover;
 }
 
-.scanner-actions {
-  display: flex;
-  justify-content: center;
-  margin-top: 0.75rem;
-}
-
-.scanner-upload {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  background: white;
-  color: #92400e;
-  cursor: pointer;
-  font-size: 0.8rem;
-  font-weight: 600;
-  padding: 0.5rem 0.9rem;
-}
-
-.scanner-upload input {
-  display: none;
-}
-
 .scanner-hint {
   margin: 0.5rem 0 0;
   font-size: 0.8rem;
   color: #92400e;
   text-align: center;
+}
+
+.scanner-hint-tracking {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.scanner-hint-ready {
+  color: #047857;
+  font-weight: 600;
 }
 
 .scanner-error {

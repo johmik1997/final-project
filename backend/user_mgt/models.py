@@ -81,6 +81,11 @@ class User(AbstractUser):
         ('DEACTIVATED', 'DEACTIVATED'),
     ]
     status = models.CharField(max_length=30,choices=STATUS_CHOICES, default='ACTIVE')
+    id_expiry_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="University ID expiry date. Expired IDs cannot login, register, or borrow.",
+    )
     must_change_password = models.BooleanField(default=False)
     USERNAME_FIELD = "id_number"
     REQUIRED_FIELDS = ["email"]
@@ -107,6 +112,33 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.id_number
+
+
+class CampusStudent(models.Model):
+    """Campus registry used to verify student self-registration."""
+
+    STATUS_CHOICES = [
+        ("ACTIVE", "ACTIVE"),
+        ("INACTIVE", "INACTIVE"),
+    ]
+
+    id_number = models.CharField(max_length=30, unique=True, db_index=True)
+    full_name = models.CharField(max_length=120)
+    phone = models.CharField(max_length=15, blank=True, default="")
+    department = models.CharField(max_length=70, blank=True, default="")
+    campus = models.CharField(max_length=100, blank=True, default="")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="ACTIVE")
+    id_expiry_date = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "campus_students"
+        ordering = ["id_number"]
+
+    def __str__(self):
+        return f"{self.id_number} - {self.full_name}"
+
 
 class Notification(models.Model):
     id = models.UUIDField(primary_key=True, default= uuid.uuid4,editable=False)

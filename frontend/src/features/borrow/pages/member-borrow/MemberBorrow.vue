@@ -89,23 +89,23 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="p-4 sm:p-7">
-    <div class="mb-6 bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+    <div class="mb-6 bg-white dark:bg-slate-800/50 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm p-5 transition-colors">
       <div class="flex flex-col lg:flex-row justify-between lg:items-center gap-4">
         <div>
-          <h1 class="text-2xl font-bold flex items-center gap-2">
-            <BaseIcon :path="mdiBookmarkMultiple" size="28" />
+          <h1 class="text-2xl font-bold flex items-center gap-2 text-gray-900 dark:text-white">
+            <BaseIcon :path="mdiBookmarkMultiple" size="28" class="text-amber-600 dark:text-amber-400" />
             My Borrowed Materials
           </h1>
-          <p class="text-sm text-gray-500 mt-1">
+          <p class="text-sm text-gray-500 dark:text-slate-400 mt-1">
             Track your borrowed items, due dates, and status
           </p>
         </div>
 
-        <div class="flex flex-wrap gap-3 text-sm text-gray-600">
-          <span class="px-3 py-1 rounded-full bg-gray-100">Total: {{ stats.total }}</span>
-          <span class="px-3 py-1 rounded-full bg-amber-100 text-amber-700">Borrowed: {{ stats.borrowed }}</span>
-          <span class="px-3 py-1 rounded-full bg-red-100 text-red-700">Overdue: {{ stats.overdue }}</span>
-          <span class="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700">Returned: {{ stats.returned }}</span>
+        <div class="flex flex-wrap gap-3 text-sm text-gray-600 dark:text-slate-300">
+          <span class="px-3 py-1 rounded-full bg-gray-100 dark:bg-slate-700 dark:text-slate-200">Total: {{ stats.total }}</span>
+          <span class="px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300">Borrowed: {{ stats.borrowed }}</span>
+          <span class="px-3 py-1 rounded-full bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-300">Overdue: {{ stats.overdue }}</span>
+          <span class="px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300">Returned: {{ stats.returned }}</span>
         </div>
       </div>
 
@@ -113,13 +113,13 @@ onBeforeUnmount(() => {
         <BaseIcon
           :path="mdiMagnify"
           size="18"
-          class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+          class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500"
         />
         <input
           v-model="searchQuery"
           type="text"
           placeholder="Search by title, author, status, or date..."
-          class="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400"
+          class="w-full pl-10 pr-4 py-2.5 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:focus:ring-amber-500/20 focus:border-primary-400 dark:focus:border-amber-500"
         />
       </div>
     </div>
@@ -127,11 +127,15 @@ onBeforeUnmount(() => {
     <!-- Mobile Cards -->
     <div class="block lg:hidden">
       <div v-if="borrowsReq.pending.value" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div v-for="num in 4" :key="`borrow-skeleton-${num}`" class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 animate-pulse">
-          <div class="h-4 bg-gray-200 rounded w-3/4 mb-3"></div>
-          <div class="h-3 bg-gray-200 rounded w-1/2 mb-2"></div>
-          <div class="h-3 bg-gray-200 rounded w-2/3 mb-2"></div>
-          <div class="h-3 bg-gray-200 rounded w-1/3"></div>
+        <div
+          v-for="num in 4"
+          :key="`borrow-skeleton-${num}`"
+          class="bg-white dark:bg-slate-800/50 rounded-xl border border-gray-100 dark:border-slate-700 shadow-sm p-4 animate-pulse"
+        >
+          <div class="h-4 bg-gray-200 dark:bg-slate-600 rounded w-3/4 mb-3"></div>
+          <div class="h-3 bg-gray-200 dark:bg-slate-600 rounded w-1/2 mb-2"></div>
+          <div class="h-3 bg-gray-200 dark:bg-slate-600 rounded w-2/3 mb-2"></div>
+          <div class="h-3 bg-gray-200 dark:bg-slate-600 rounded w-1/3"></div>
         </div>
       </div>
 
@@ -139,38 +143,38 @@ onBeforeUnmount(() => {
         <div
           v-for="row in filteredBorrows"
           :key="row?.id || row?.uuid"
-          class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 space-y-3"
+          class="bg-white dark:bg-slate-800/50 rounded-xl border border-gray-100 dark:border-slate-700 shadow-sm p-4 space-y-3 transition-colors"
         >
           <div>
-            <h3 class="text-base font-semibold text-gray-900">{{ row?.material_title || 'Untitled Material' }}</h3>
-            <p class="text-sm text-gray-500">{{ row?.material_author || 'Unknown Author' }}</p>
+            <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ row?.material_title || 'Untitled Material' }}</h3>
+            <p class="text-sm text-gray-500 dark:text-slate-400">{{ row?.material_author || 'Unknown Author' }}</p>
           </div>
 
-          <div class="text-sm text-gray-600 space-y-1">
+          <div class="text-sm text-gray-600 dark:text-slate-300 space-y-1">
             <div class="flex justify-between gap-2">
-              <span class="text-gray-500">Borrowed</span>
+              <span class="text-gray-500 dark:text-slate-400">Borrowed</span>
               <span class="font-medium">{{ secondDateFormatWithTime(row?.borrow_date) || '-' }}</span>
             </div>
             <div class="flex justify-between gap-2">
-              <span class="text-gray-500">Due</span>
+              <span class="text-gray-500 dark:text-slate-400">Due</span>
               <span class="font-medium">{{ secondDateFormatWithTime(row?.due_date) || '-' }}</span>
             </div>
             <div class="flex justify-between gap-2">
-              <span class="text-gray-500">Days Left</span>
+              <span class="text-gray-500 dark:text-slate-400">Days Left</span>
               <span class="font-medium">{{ formatDaysLeft(row?.due_date) }}</span>
             </div>
           </div>
 
           <div class="flex items-center justify-between">
-            <span class="text-xs text-gray-500">Status</span>
+            <span class="text-xs text-gray-500 dark:text-slate-400">Status</span>
             <span
               class="text-xs font-semibold px-2.5 py-1 rounded-full"
               :class="
                 normalizeStatus(row?.status) === 'OVERDUE'
-                  ? 'bg-red-100 text-red-700'
+                  ? 'bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-300'
                   : normalizeStatus(row?.status) === 'BORROWED'
-                    ? 'bg-amber-100 text-amber-700'
-                    : 'bg-emerald-100 text-emerald-700'
+                    ? 'bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300'
+                    : 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300'
               "
             >
               {{ row?.status || 'UNKNOWN' }}
@@ -179,13 +183,16 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-else class="bg-white rounded-xl border border-gray-100 shadow-sm p-6 text-center text-sm text-gray-500">
+      <div
+        v-else
+        class="bg-white dark:bg-slate-800/50 rounded-xl border border-gray-100 dark:border-slate-700 shadow-sm p-6 text-center text-sm text-gray-500 dark:text-slate-400"
+      >
         No borrowed materials found.
       </div>
     </div>
 
     <!-- Desktop Table -->
-    <div class="hidden lg:block bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+    <div class="hidden lg:block bg-white dark:bg-slate-800/50 rounded-lg shadow-sm border border-gray-100 dark:border-slate-700 overflow-hidden transition-colors">
       <Table
         :pending="borrowsReq.pending.value"
         :rows="filteredBorrows"

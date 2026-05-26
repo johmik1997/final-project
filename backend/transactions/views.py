@@ -10,6 +10,13 @@ from material_mgt.cache import invalidate_material_caches
 from material_mgt.models import *
 from user_mgt.access import get_user_library, is_super_admin, normalize_role
 from .serializers import *
+from .overdue_letters import (
+    generate_warning_letter_pdf,
+    get_very_overdue_borrows_queryset,
+    get_very_overdue_threshold_days,
+    letter_to_dict,
+    serialize_very_overdue_letters,
+)
 from .services import (
     sync_overdue_borrow_statuses,
     notify_circulation_borrow_success,
@@ -138,6 +145,68 @@ class BorrowViewSet(ModelViewSet):
         response['Content-Disposition'] = f'attachment; filename="receipt_{borrow.id}.pdf"'
         return response
 
+
+    def _staff_borrow_queryset(self, user):
+        queryset = Borrow.objects.select_related("member", "material", "material__library", "created_by").all()
+        if normalize_role(getattr(user, "role", None)) == "MEMBER":
+            return queryset.filter(member=user)
+        if not is_super_admin(user):
+            actor_library = get_user_library(user)
+            if not actor_library:
+                return Borrow.objects.none()
+            return queryset.filter(material__library=actor_library)
+        return queryset
+
+    @action(detail=False, methods=["get"], url_path="very-overdue")
+    def very_overdue(self, request):
+        user_role = normalize_role(getattr(request.user, "role", None))
+        if user_role == "MEMBER":
+            return Response({"detail": "Not permitted."}, status=status.HTTP_403_FORBIDDEN)
+
+        base_qs = self._staff_borrow_queryset(request.user)
+        pairs = get_very_overdue_borrows_queryset(base_qs)
+        letters = serialize_very_overdue_letters(pairs)
+        return Response(
+            {
+                "threshold_days": get_very_overdue_threshold_days(),
+                "count": len(letters),
+                "letters": [letter_to_dict(letter) for letter in letters],
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["get"], url_path="warning-letter")
+    def warning_letter_pdf(self, request, pk=None):
+        user_role = normalize_role(getattr(request.user, "role", None))
+        if user_role == "MEMBER":
+            return Response({"detail": "Not permitted."}, status=status.HTTP_403_FORBIDDEN)
+        if fitz is None:
+            return Response(
+                {"detail": "PyMuPDF is not installed. Install it with: pip install PyMuPDF"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        borrow = self.get_object()
+        base_qs = self._staff_borrow_queryset(request.user).filter(pk=borrow.pk)
+        pairs = get_very_overdue_borrows_queryset(base_qs)
+        if not pairs:
+            return Response(
+                {"detail": "This borrow is not in the very overdue list."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        letter = serialize_very_overdue_letters(pairs)[0]
+        try:
+            pdf_bytes = generate_warning_letter_pdf(letter)
+        except RuntimeError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        safe_id = str(borrow.member.id_number or "student").replace("/", "-")
+        filename = f"overdue_warning_{safe_id}.pdf"
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response["Content-Length"] = len(pdf_bytes)
+        return response
 
     @action(detail=False, methods=["get"], url_path="my")
     def my(self, request):

@@ -8,6 +8,7 @@ from .models import Borrow, Reservation, Return, Circulation
 from .services import calculate_overdue_days, finalize_return_for_borrow
 from .services import notify_borrow_success, notify_return_success
 from user_mgt.access import get_active_library_policy, get_user_library, is_super_admin, normalize_role, is_staff_like
+from user_mgt.member_access import validate_member_account
 from user_mgt.models import User
 
 class ReservationSerializer(serializers.ModelSerializer):
@@ -47,6 +48,10 @@ class ReservationSerializer(serializers.ModelSerializer):
         user = getattr(request, "user", None)
         if not user or normalize_role(getattr(user, "role", None)) != "MEMBER":
             raise serializers.ValidationError("Only members can reserve materials.")
+
+        member_error = validate_member_account(user, context="borrow")
+        if member_error:
+            raise serializers.ValidationError({"detail": member_error})
 
         material = attrs.get("material_id")
 
@@ -210,6 +215,10 @@ class BorrowSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 "member": f"Validation failed. User role is '{getattr(final_member, 'role', 'N/A')}', but 'MEMBER' is required."
             })
+
+        member_error = validate_member_account(final_member, context="borrow")
+        if member_error:
+            raise serializers.ValidationError({"member": member_error})
 
         # 4. Material Availability
         material = attrs.get("material")
@@ -471,6 +480,10 @@ class CirculationSerializer(serializers.ModelSerializer):
         user_role = normalize_role(getattr(final_member, "role", ""))
         if user_role != "MEMBER":
             raise serializers.ValidationError({"member": "Circulation is only for members."})
+
+        member_error = validate_member_account(final_member, context="borrow")
+        if member_error:
+            raise serializers.ValidationError({"member": member_error})
         
         # Prevent duplicate active circulation of same book
         existing = Circulation.objects.filter(member=final_member, material=material, status="BORROWED").exists()

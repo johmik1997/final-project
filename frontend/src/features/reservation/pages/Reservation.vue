@@ -270,74 +270,87 @@ function submitReservation() {
 </script>
 
 <template>
-  <div class="p-4 sm:p-7">
+  <div class="min-h-full p-4 sm:p-7">
     <div class="mb-6">
       <BorrowHeader :stats="stats" v-model:viewMode="viewMode" />
     </div>
 
-  <div class="mb-6 bg-white p-1.5 rounded-2xl border border-gray-100 shadow-sm">
-  <div class="grid grid-cols-2 gap-2">
-    <button
-      @click="switchToReserve"
-      class="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200"
-      :class="activeView === 'reserve' 
-        ? 'bg-gray-900 text-white shadow-md' 
-        : 'bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900'"
-    >
-      Reserve Material
-    </button>
+    <div class="mb-6 rounded-2xl bg-white dark:bg-slate-800/50 border border-gray-100 dark:border-slate-700 transition-colors">
+      <div class="p-1.5">
+        <div class="grid grid-cols-2 gap-2">
+          <button
+            @click="switchToReserve"
+            class="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200"
+            :class="activeView === 'reserve'
+              ? 'bg-gray-900 dark:bg-slate-700 text-white shadow-md'
+              : 'bg-transparent text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-slate-200'"
+          >
+            Reserve Material
+          </button>
 
-    <button
-      @click="switchToHistory"
-      class="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200"
-      :class="activeView === 'history' 
-        ? 'bg-gray-900 text-white shadow-md' 
-        : 'bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900'"
-    >
-      View History
-    </button>
-  </div>
-</div>
+          <button
+            @click="switchToHistory"
+            class="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200"
+            :class="activeView === 'history'
+              ? 'bg-gray-900 dark:bg-slate-700 text-white shadow-md'
+              : 'bg-transparent text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-slate-200'"
+          >
+            View History
+          </button>
+        </div>
+      </div>
+    </div>
 
     <div v-if="activeView === 'reserve'" class="mb-6">
       <ReservationStepNav :has-selection="Boolean(selectedMaterial)" :has-date="Boolean(reserveDate)" />
     </div>
 
     <div v-if="activeView === 'reserve'" class="mb-6">
-      <div v-if="!selectedMaterial" class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+      <div
+        v-if="!selectedMaterial"
+        class="rounded-2xl border shadow-sm p-5 bg-white dark:bg-slate-800/50 border-gray-100 dark:border-slate-700 transition-colors"
+      >
         <div class="mb-4">
-          <h1 class="text-2xl font-bold text-gray-900">Reserve Material</h1>
-          <p class="text-sm text-gray-500">Choose a material card to continue.</p>
+          <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Reserve Material</h1>
+          <p class="text-sm text-gray-500 dark:text-slate-400">Choose a material card to continue.</p>
         </div>
 
-       <div class="relative w-full max-w-xl mb-5">
-  <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-    <BaseIcon :path="mdiMagnify" size="20" class="text-gray-400" />
-  </div>
+        <div class="relative w-full max-w-xl mb-5">
+          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <BaseIcon :path="mdiMagnify" size="20" class="text-gray-400 dark:text-slate-500" />
+          </div>
 
-  <input
-    v-model="searchQuery"
-    type="text"
-    placeholder="Search by title, author, ISBN, or category..."
-    class="w-full pl-10 pr-10 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm transition-all duration-200 
-           focus:bg-white focus:ring-4 focus:ring-blue-50 focus:border-blue-400 focus:outline-none"
-  />
-</div>
-
-        <div v-if="materialReq.pending.value" class="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center gap-3">
-          <div class="animate-spin rounded-full h-5 w-5 border-2 border-blue-600 border-t-transparent"></div>
-          <p class="text-sm text-blue-800">Loading materials...</p>
+          <input
+            v-model="searchQuery"
+            type="text"
+            placeholder="Search by title, author, ISBN, or category..."
+            class="w-full pl-10 pr-10 py-2.5 rounded-xl text-sm transition-all duration-200 focus:outline-none bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-400 focus:bg-white dark:focus:bg-slate-600 focus:border-blue-400 dark:focus:border-amber-500 focus:ring-4 focus:ring-blue-50 dark:focus:ring-amber-500/20"
+          />
         </div>
 
-        <div v-else-if="filteredMaterials.length === 0" class="bg-amber-50 border border-amber-200 rounded-lg p-6 text-center">
-          <BaseIcon :path="mdiAlertCircle" size="28" class="text-amber-600 mx-auto mb-2" />
-          <p class="text-sm text-amber-800">No materials found for your search.</p>
+        <div
+          v-if="materialReq.pending.value"
+          class="rounded-lg p-4 flex items-center gap-3 bg-blue-50 dark:bg-slate-700/50 border border-blue-200 dark:border-slate-600"
+        >
+          <div class="animate-spin rounded-full h-5 w-5 border-2 border-blue-600 dark:border-amber-500 border-t-transparent"></div>
+          <p class="text-sm text-blue-800 dark:text-slate-300">Loading materials...</p>
         </div>
 
-        <div v-else-if="reservableMaterials.length === 0" class="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
-          <BaseIcon :path="mdiAlertCircle" size="28" class="text-blue-600 mx-auto mb-2" />
-          <p class="text-sm text-blue-800">No unavailable materials to reserve right now.</p>
-          <p class="text-xs text-blue-700 mt-1">Available materials can be borrowed directly.</p>
+        <div
+          v-else-if="filteredMaterials.length === 0"
+          class="rounded-lg p-6 text-center bg-amber-50 dark:bg-slate-700/50 border border-amber-200 dark:border-slate-600"
+        >
+          <BaseIcon :path="mdiAlertCircle" size="28" class="mx-auto mb-2 text-amber-600 dark:text-amber-400" />
+          <p class="text-sm text-amber-800 dark:text-slate-300">No materials found for your search.</p>
+        </div>
+
+        <div
+          v-else-if="reservableMaterials.length === 0"
+          class="rounded-lg p-6 text-center bg-blue-50 dark:bg-slate-700/50 border border-blue-200 dark:border-slate-600"
+        >
+          <BaseIcon :path="mdiAlertCircle" size="28" class="mx-auto mb-2 text-blue-600 dark:text-blue-400" />
+          <p class="text-sm text-blue-800 dark:text-slate-300">No unavailable materials to reserve right now.</p>
+          <p class="text-xs mt-1 text-blue-700 dark:text-slate-400">Available materials can be borrowed directly.</p>
         </div>
 
         <div v-else>
@@ -353,32 +366,34 @@ function submitReservation() {
             />
           </div>
 
-          <div v-else class="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+          <div v-else class="overflow-x-auto rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800/50">
             <table class="min-w-full text-sm">
-              <thead class="bg-gray-50 border-b border-gray-200">
+              <thead class="bg-gray-50 dark:bg-slate-700/50 border-b border-gray-200 dark:border-slate-600">
                 <tr>
-                  <th class="text-left px-4 py-3 font-semibold text-gray-700">Title</th>
-                  <th class="text-left px-4 py-3 font-semibold text-gray-700">Author</th>
-                  <th class="text-left px-4 py-3 font-semibold text-gray-700">Category</th>
-                  <th class="text-left px-4 py-3 font-semibold text-gray-700">Available</th>
-                  <th class="text-left px-4 py-3 font-semibold text-gray-700">Action</th>
+                  <th class="text-left px-4 py-3 font-semibold text-gray-700 dark:text-slate-300">Title</th>
+                  <th class="text-left px-4 py-3 font-semibold text-gray-700 dark:text-slate-300">Author</th>
+                  <th class="text-left px-4 py-3 font-semibold text-gray-700 dark:text-slate-300">Category</th>
+                  <th class="text-left px-4 py-3 font-semibold text-gray-700 dark:text-slate-300">Available</th>
+                  <th class="text-left px-4 py-3 font-semibold text-gray-700 dark:text-slate-300">Action</th>
                 </tr>
               </thead>
               <tbody>
                 <tr
                   v-for="item in reservableMaterials"
                   :key="item.id"
-                  class="border-b border-gray-100 hover:bg-blue-50/40 transition-colors"
-                  :class="selectedMaterial?.id === item.id ? 'bg-blue-50' : ''"
+                  class="border-b transition-colors border-gray-100 dark:border-slate-700 hover:bg-blue-50/40 dark:hover:bg-slate-700/30"
+                  :class="selectedMaterial?.id === item.id ? 'bg-blue-50 dark:bg-slate-700' : ''"
                 >
-                  <td class="px-4 py-3 font-medium text-gray-900">{{ item.title || 'Untitled' }}</td>
-                  <td class="px-4 py-3 text-gray-600">{{ item.author || '-' }}</td>
-                  <td class="px-4 py-3 text-gray-600">{{ item.category || 'General' }}</td>
-                  <td class="px-4 py-3 text-gray-700">{{ item.available_copies || 0 }}</td>
+                  <td class="px-4 py-3 font-medium text-gray-900 dark:text-white">{{ item.title || 'Untitled' }}</td>
+                  <td class="px-4 py-3 text-gray-600 dark:text-slate-300">{{ item.author || '-' }}</td>
+                  <td class="px-4 py-3 text-gray-600 dark:text-slate-300">{{ item.category || 'General' }}</td>
+                  <td class="px-4 py-3 text-gray-700 dark:text-slate-300">{{ item.available_copies || 0 }}</td>
                   <td class="px-4 py-3">
                     <button
-                      class="text-xs px-3 py-1.5 rounded-lg font-medium"
-                      :class="item.available_copies <= 0 ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-200 text-gray-500 cursor-not-allowed'"
+                      class="text-xs px-3 py-1.5 rounded-lg font-medium transition-colors"
+                      :class="item.available_copies <= 0
+                        ? 'bg-blue-600 dark:bg-amber-500 text-white dark:text-slate-900 hover:bg-blue-700 dark:hover:bg-amber-400'
+                        : 'bg-gray-200 dark:bg-slate-600 text-gray-500 dark:text-slate-400 cursor-not-allowed'"
                       :disabled="item.available_copies > 0"
                       @click="selectMaterial(item)"
                     >
@@ -404,6 +419,11 @@ function submitReservation() {
       </div>
     </div>
 
-    <ReservationHistoryTable v-if="activeView === 'history'" :rows="myReservations" :loading="listReq.pending.value" @refresh="refreshReservations" />
+    <ReservationHistoryTable
+      v-if="activeView === 'history'"
+      :rows="myReservations"
+      :loading="listReq.pending.value"
+      @refresh="refreshReservations"
+    />
   </div>
 </template>

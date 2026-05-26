@@ -24,5 +24,11 @@ export default [
         component: () => import('@/features/borrow/pages/Circulation.vue'),
         meta: { requiresAuth: true, roles: ['ADMIN', 'SUPER ADMIN', 'FRONT DESK STAFF'] }
     },
+    {
+        path: '/overdue-letters',
+        name: 'OverdueLetters',
+        component: () => import('@/features/borrow/pages/OverdueLetters.vue'),
+        meta: { requiresAuth: true, roles: ['ADMIN', 'SUPER ADMIN', 'STACK STAFF'] }
+    },
 ]
 

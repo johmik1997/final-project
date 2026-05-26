@@ -62,6 +62,13 @@ class UserAdmin(admin.ModelAdmin):
         super().delete_queryset(request, queryset)
 
 
+@admin.register(models.CampusStudent)
+class CampusStudentAdmin(admin.ModelAdmin):
+    list_display = ("id_number", "full_name", "department", "campus", "status", "id_expiry_date")
+    search_fields = ("id_number", "full_name", "phone")
+    list_filter = ("status", "campus")
+
+
 admin.site.register(models.User, UserAdmin)
 admin.site.register(models.Notification)
 admin.site.register(models.Library)

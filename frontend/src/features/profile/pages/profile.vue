@@ -225,16 +225,16 @@ function handleUpdateProfile({ values }) {
 </script>
 
 <template>
-  <div class="w-full min-h-screen bg-gray-50">
+  <div class="w-full min-h-full pb-10 bg-gray-50 dark:bg-slate-900 transition-colors">
     <!-- Header section -->
-    <div class="relative bg-primary rounded-b-2xl h-56">
+    <div class="relative bg-primary dark:bg-gradient-to-br dark:from-slate-800 dark:via-slate-900 dark:to-slate-950 rounded-b-2xl h-56">
       <!-- Content section -->
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 absolute top-32 w-full">
         <div class="flex flex-col lg:flex-row gap-6">
           
           <!-- Profile Picture Section -->
-          <div class="bg-white rounded-2xl p-4 flex-shrink-0 w-full max-w-xs mx-auto lg:mx-0">
-            <div v-if="isLoading" class="rounded-lg w-full h-[206px] flex items-center justify-center bg-gray-200">
+          <div class="bg-white dark:bg-slate-800 rounded-2xl p-4 flex-shrink-0 w-full max-w-xs mx-auto lg:mx-0 border border-gray-100 dark:border-slate-700 shadow-sm transition-colors">
+            <div v-if="isLoading" class="rounded-lg w-full h-[206px] flex items-center justify-center bg-gray-200 dark:bg-slate-700">
               <i v-html="icons.spinner" class="text-2xl" />
             </div>
             <img
@@ -262,18 +262,20 @@ function handleUpdateProfile({ values }) {
           </div>
 
           <!-- Form Section -->
-          <div class="bg-white flex-1 rounded-2xl p-6 space-y-6">
+          <div class="bg-white dark:bg-slate-800 flex-1 rounded-2xl p-6 space-y-6 border border-gray-100 dark:border-slate-700 shadow-sm transition-colors">
             <!-- Tabs + Edit Button -->
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <!-- Tabs -->
-              <div class="flex border border-gray-500 rounded overflow-hidden w-fit mx-auto sm:mx-0">
+              <div class="flex border border-gray-300 dark:border-slate-600 rounded overflow-hidden w-fit mx-auto sm:mx-0">
                 <div
                   v-for="(item, index) in components"
                   :key="index"
                   @click="setActive(index)"
                   :class="[
                     'px-4 py-2 text-sm sm:text-base cursor-pointer transition-all',
-                    active === index ? 'bg-gray-500 text-white font-semibold' : 'text-gray-700',
+                    active === index
+                      ? 'bg-gray-500 dark:bg-amber-600 text-white font-semibold'
+                      : 'text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700',
                     index === 0 ? 'rounded-l' : '',
                     index === components.length - 1 ? 'rounded-r' : '',
                   ]"

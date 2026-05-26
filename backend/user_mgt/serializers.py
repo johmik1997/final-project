@@ -16,7 +16,8 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from material_mgt.cache import invalidate_library_caches
 from transactions.models import Borrow, Reservation
 from .access import get_user_library, is_super_admin, normalize_role
-from .models import Library, LibraryPolicy, Notification, User
+from .member_access import validate_campus_student_registration, validate_member_account
+from .models import CampusStudent, Library, LibraryPolicy, Notification, User
 
 # --- Helper Functions ---
 
@@ -157,7 +158,21 @@ class UserCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "id_number", "first_name", "last_name", "email", "role", "status", "library", "password", "phone", "department", "user_type"]
+        fields = [
+            "id",
+            "id_number",
+            "first_name",
+            "last_name",
+            "email",
+            "role",
+            "status",
+            "library",
+            "password",
+            "phone",
+            "department",
+            "user_type",
+            "id_expiry_date",
+        ]
         read_only_fields = ["id"]
 
     def validate(self, attrs):
@@ -238,6 +253,9 @@ class UserCreateSerializer(serializers.ModelSerializer):
             if role_norm == "MEMBER":
                 user.department = department
                 user.user_type = user_type
+                campus = CampusStudent.objects.filter(id_number__iexact=user.id_number).first()
+                if campus and campus.id_expiry_date and not user.id_expiry_date:
+                    user.id_expiry_date = campus.id_expiry_date
             elif role_norm == "DEPARTMENTHEAD":
                 user.department = department
             user.phone = phone
@@ -387,8 +405,33 @@ class UserMeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "id_number", "first_name", "last_name", "email", "role", "status", "must_change_password", "library_id", "library_name", "phone", "photo"]
-        read_only_fields = ["id", "id_number", "role", "status", "must_change_password", "library_id", "library_name", "phone", "photo"]
+        fields = [
+            "id",
+            "id_number",
+            "first_name",
+            "last_name",
+            "email",
+            "role",
+            "status",
+            "id_expiry_date",
+            "must_change_password",
+            "library_id",
+            "library_name",
+            "phone",
+            "photo",
+        ]
+        read_only_fields = [
+            "id",
+            "id_number",
+            "role",
+            "status",
+            "id_expiry_date",
+            "must_change_password",
+            "library_id",
+            "library_name",
+            "phone",
+            "photo",
+        ]
 
     def get_phone(self, obj):
         profile = _get_user_profile(obj)
@@ -419,9 +462,80 @@ class UserListSerializer(serializers.ModelSerializer):
         return _build_media_url(self.context.get("request"), getattr(profile, "photo", None))
 
 
+class StudentSelfRegisterSerializer(serializers.Serializer):
+    id_number = serializers.CharField(max_length=30)
+    full_name = serializers.CharField(max_length=120)
+    phone = serializers.CharField(max_length=15)
+    email = serializers.EmailField(max_length=100)
+    password = serializers.CharField(write_only=True, min_length=8)
+    confirm_password = serializers.CharField(write_only=True, min_length=8)
+
+    def validate(self, attrs):
+        if attrs["password"] != attrs["confirm_password"]:
+            raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
+        campus = validate_campus_student_registration(
+            id_number=attrs["id_number"],
+            full_name=attrs["full_name"],
+            phone=attrs.get("phone") or "",
+            email=attrs.get("email") or "",
+        )
+        attrs["campus_record"] = campus
+        return attrs
+
+    def create(self, validated_data):
+        campus = validated_data["campus_record"]
+        password = validated_data["password"]
+        full_name = str(validated_data["full_name"]).strip()
+        parts = full_name.split(None, 1)
+        first_name = parts[0] if parts else full_name
+        last_name = parts[1] if len(parts) > 1 else ""
+
+        with transaction.atomic():
+            user = User.objects.create_user(
+                id_number=str(validated_data["id_number"]).strip(),
+                password=password,
+                email=validated_data["email"].strip().lower(),
+                first_name=first_name,
+                last_name=last_name,
+                role="MEMBER",
+                status="ACTIVE",
+                user_type="STUDENT",
+                department=(campus.department or "UNASSIGNED").strip() or "UNASSIGNED",
+                phone=str(validated_data.get("phone") or campus.phone or "").strip(),
+                library=None,
+                id_expiry_date=campus.id_expiry_date,
+                must_change_password=False,
+            )
+        invalidate_library_caches()
+        return user
+
+
+class CampusStudentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CampusStudent
+        fields = [
+            "id",
+            "id_number",
+            "full_name",
+            "phone",
+            "department",
+            "campus",
+            "status",
+            "id_expiry_date",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         data = super().validate(attrs)
+        member_error = validate_member_account(self.user, context="login")
+        if member_error:
+            raise serializers.ValidationError({"detail": member_error})
+        if str(getattr(self.user, "status", "")).strip().upper() != "ACTIVE":
+            raise serializers.ValidationError({"detail": "Student is inactive."})
         profile = _get_user_profile(self.user)
         data["user"] = {
             "id": str(self.user.id),
@@ -436,6 +550,9 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             "library_name": self.user.library.name if self.user.library_id else None,
             "phone": getattr(profile, "phone", None),
             "photo": _build_media_url(self.context.get("request"), getattr(profile, "photo", None)),
+            "id_expiry_date": (
+                self.user.id_expiry_date.isoformat() if getattr(self.user, "id_expiry_date", None) else None
+            ),
         }
         data["must_change_password"] = bool(getattr(self.user, "must_change_password", False))
         return data
@@ -486,6 +603,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             "phone",
             "department",
             "user_type",
+            "id_expiry_date",
         ]
         read_only_fields = ["id", "library_id", "library_name"]
 

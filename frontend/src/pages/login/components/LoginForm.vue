@@ -56,6 +56,21 @@
             'bg-gradient-to-r from-amber-500 to-red-500 text-white font-semibold py-3 rounded-xl hover:shadow-lg hover:shadow-amber-500/25 transition-all duration-300': true
           }"
         />
+        <div class="text-center mt-5">
+  <span
+    class="text-sm"
+    :class="isDarkTheme ? 'text-slate-400' : 'text-slate-600'"
+  >
+    Don't have an account?
+  </span>
+
+  <span
+    @click="router.push('/signup')"
+    class="ml-1 text-sm font-semibold text-amber-500 cursor-pointer hover:text-amber-400 transition-colors"
+  >
+    Sign Up
+  </span>
+</div>
 
       </div>
     </NewFormLayout>

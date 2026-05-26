@@ -1,6 +1,14 @@
 import { ref, watch } from 'vue'
 
-const isDark = ref(true)
+function readStoredTheme() {
+  if (typeof window === 'undefined') return true
+  const saved = localStorage.getItem('theme')
+  if (saved === 'light') return false
+  if (saved === 'dark') return true
+  return true
+}
+
+const isDark = ref(readStoredTheme())
 
 export function useTheme() {
   const toggleTheme = () => {
@@ -11,18 +19,23 @@ export function useTheme() {
     isDark.value = dark
   }
 
-  // Watch for changes and update document class
-  watch(isDark, (newValue) => {
-    if (newValue) {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
-  }, { immediate: true })
+  watch(
+    isDark,
+    (newValue) => {
+      if (newValue) {
+        document.documentElement.classList.add('dark')
+        localStorage.setItem('theme', 'dark')
+      } else {
+        document.documentElement.classList.remove('dark')
+        localStorage.setItem('theme', 'light')
+      }
+    },
+    { immediate: true }
+  )
 
   return {
     isDark,
     toggleTheme,
-    setTheme
+    setTheme,
   }
 }

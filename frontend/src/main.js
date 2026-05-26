@@ -1,4 +1,7 @@
 import "./assets/main.css";
+import { useTheme } from "@/composables/useTheme";
+
+useTheme();
 
 import { createApp } from "vue";
 import { createPinia } from "pinia";

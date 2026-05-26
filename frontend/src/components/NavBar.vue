@@ -5,6 +5,7 @@ import { useAuth } from "@/stores/auth";
 import { useRouter } from "vue-router";
 import icons from "@/utils/icons";
 import imageSrc from "@/assets/img/profile.png";
+import ThemeToggle from "@/components/ThemeToggle.vue";
 
 // Define props
 const props = defineProps({
@@ -223,12 +224,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </div>
-        <button class="icon-button">
-          <i v-html="icons.message" />
-        </button>
-        <button class="icon-button">
-          <i v-html="icons.bire" />
-        </button>
+        <ThemeToggle class="navbar-theme-toggle" />
       </div>
 
       <!-- User Profile Section -->
@@ -269,10 +265,10 @@ onBeforeUnmount(() => {
                 {{ unreadCount }}
               </span>
             </button>
-            <button class="dropdown-item">
-              <i v-html="icons.message" />
-              <span>Messages</span>
-            </button>
+            <div class="dropdown-item justify-between">
+              <span>Theme</span>
+              <ThemeToggle class="navbar-theme-toggle" />
+            </div>
           </div>
           
           <!-- Common menu items -->
@@ -311,11 +307,17 @@ onBeforeUnmount(() => {
 }
 
 .navbar-container.scrolled {
-  background: rgba(15, 23, 42, 0.95);
+  background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(12px);
   border-radius: 1rem;
   padding: 0.5rem;
   margin: -0.5rem;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.dark .navbar-container.scrolled {
+  background: rgba(15, 23, 42, 0.95);
+  border-color: rgba(245, 158, 11, 0.15);
 }
 
 /* Back Button */
@@ -363,17 +365,44 @@ onBeforeUnmount(() => {
   }
 }
 
+.navbar-theme-toggle :deep(.theme-toggle-btn) {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.15);
+}
+
+.navbar-theme-toggle :deep(.theme-icon) {
+  color: #64748b;
+}
+
+.dark .navbar-theme-toggle :deep(.theme-toggle-btn) {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.15);
+}
+
+.dark .navbar-theme-toggle :deep(.sun-icon) {
+  color: #fbbf24;
+}
+
+.dark .navbar-theme-toggle :deep(.moon-icon) {
+  color: #cbd5e1;
+}
+
 /* Icon Buttons */
 .icon-button {
   padding: 0.5rem;
   background: rgba(245, 158, 11, 0.08);
   border-radius: 0.75rem;
   transition: all 0.2s ease;
-  color: #94A3B8;
+  color: #64748b;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.dark .icon-button {
+  color: #94a3b8;
+  border-color: rgba(245, 158, 11, 0.15);
 }
 
 .icon-button:hover {
@@ -389,10 +418,15 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 0.75rem;
   padding: 0.5rem;
-  background: rgba(245, 158, 11, 0.08);
+  background: rgba(255, 255, 255, 0.9);
   border-radius: 1rem;
   transition: all 0.2s ease;
-  border: 1px solid rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.dark .user-button {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.15);
 }
 
 .user-button:hover {
@@ -430,8 +464,12 @@ onBeforeUnmount(() => {
   height: 0.75rem;
   background: #10B981;
   border-radius: 9999px;
-  border: 2px solid #0F172A;
+  border: 2px solid #ffffff;
   animation: pulse 2s infinite;
+}
+
+.dark .online-indicator {
+  border-color: #0f172a;
 }
 
 @keyframes pulse {
@@ -453,8 +491,12 @@ onBeforeUnmount(() => {
 .user-name {
   font-size: 0.875rem;
   font-weight: 600;
-  color: white;
+  color: #0f172a;
   margin: 0;
+}
+
+.dark .user-name {
+  color: white;
 }
 
 .user-role {
@@ -481,22 +523,32 @@ onBeforeUnmount(() => {
   top: 100%;
   margin-top: 0.5rem;
   width: 13rem;
-  background: #1E293B;
+  background: #ffffff;
   border-radius: 1rem;
-  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 20px 40px -12px rgba(15, 23, 42, 0.15);
   padding: 0.5rem;
   z-index: 50;
-  border: 1px solid rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(226, 232, 240, 0.9);
   backdrop-filter: blur(10px);
+}
+
+.dark .dropdown-menu {
+  background: #1e293b;
+  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.5);
+  border-color: rgba(245, 158, 11, 0.2);
 }
 
 /* Mobile Icons Section */
 .mobile-icons-section {
   display: flex;
   flex-direction: column;
-  border-bottom: 1px solid rgba(245, 158, 11, 0.2);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
   padding-bottom: 0.5rem;
   margin-bottom: 0.5rem;
+}
+
+.dark .mobile-icons-section {
+  border-bottom-color: rgba(245, 158, 11, 0.2);
 }
 
 /* Dropdown Items */
@@ -509,8 +561,12 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 0.75rem;
   transition: all 0.2s ease;
-  color: #CBD5E1;
+  color: #475569;
   font-size: 0.875rem;
+}
+
+.dark .dropdown-item {
+  color: #cbd5e1;
 }
 
 .dropdown-item:hover {
@@ -563,9 +619,13 @@ onBeforeUnmount(() => {
   font-size: 0.65rem;
   font-weight: 700;
   border-radius: 9999px;
-  border: 1.5px solid #1e293b;
+  border: 1.5px solid #ffffff;
   box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
   animation: pulse-badge 2s infinite;
+}
+
+.dark .unread-badge {
+  border-color: #1e293b;
 }
 
 .unread-badge-mobile {
@@ -596,20 +656,20 @@ onBeforeUnmount(() => {
   top: 100%;
   margin-top: 0.75rem;
   width: 20rem;
-  background: rgba(30, 41, 59, 0.95);
+  background: rgba(255, 255, 255, 0.98);
   backdrop-filter: blur(12px);
   border-radius: 1.25rem;
-  border: 1px solid rgba(245, 158, 11, 0.25);
-  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(203, 213, 225, 0.8);
+  box-shadow: 0 20px 40px -12px rgba(15, 23, 42, 0.15);
   z-index: 50;
   overflow: hidden;
   animation: slide-in 0.2s ease-out;
 }
 
-.light .notifications-dropdown {
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid rgba(203, 213, 225, 0.8);
-  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.15);
+.dark .notifications-dropdown {
+  background: rgba(30, 41, 59, 0.95);
+  border-color: rgba(245, 158, 11, 0.25);
+  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.5);
 }
 
 @keyframes slide-in {
@@ -629,22 +689,22 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   align-items: center;
   padding: 1rem 1.25rem;
-  border-bottom: 1px solid rgba(245, 158, 11, 0.15);
+  border-bottom: 1px solid rgba(203, 213, 225, 0.5);
 }
 
-.light .notifications-header {
-  border-bottom: 1px solid rgba(203, 213, 225, 0.5);
+.dark .notifications-header {
+  border-bottom-color: rgba(245, 158, 11, 0.15);
 }
 
 .notifications-header h3 {
   font-size: 0.95rem;
   font-weight: 700;
-  color: white;
+  color: #0f172a;
   margin: 0;
 }
 
-.light .notifications-header h3 {
-  color: #0f172a;
+.dark .notifications-header h3 {
+  color: white;
 }
 
 .mark-all-btn {
@@ -690,7 +750,7 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 0.75rem;
   padding: 0.875rem 1.25rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
   cursor: pointer;
   transition: all 0.2s ease;
   align-items: flex-start;
@@ -698,8 +758,8 @@ onBeforeUnmount(() => {
   text-align: left;
 }
 
-.light .notification-item {
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+.dark .notification-item {
+  border-bottom-color: rgba(255, 255, 255, 0.05);
 }
 
 .notification-item:hover {
@@ -730,31 +790,31 @@ onBeforeUnmount(() => {
 
 .notification-message {
   font-size: 0.825rem;
-  color: #cbd5e1;
+  color: #334155;
   margin: 0;
   line-height: 1.4;
 }
 
-.light .notification-message {
-  color: #334155;
+.dark .notification-message {
+  color: #cbd5e1;
 }
 
 .notification-item.unread .notification-message {
-  color: white;
+  color: #0f172a;
   font-weight: 600;
 }
 
-.light .notification-item.unread .notification-message {
-  color: #0f172a;
+.dark .notification-item.unread .notification-message {
+  color: white;
 }
 
 .notification-time {
   font-size: 0.7rem;
-  color: #64748b;
+  color: #94a3b8;
 }
 
-.light .notification-time {
-  color: #94a3b8;
+.dark .notification-time {
+  color: #64748b;
 }
 
 .no-notifications {

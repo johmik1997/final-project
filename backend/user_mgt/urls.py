@@ -3,6 +3,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from rest_framework.routers import DefaultRouter
 from .views import (
     AdminUsersAPIView,
+    CampusStudentViewSet,
     ChangePasswordAPIView,
     FirstLoginChangePasswordAPIView,
     ConfirmResetOTPAPIView,
@@ -12,6 +13,7 @@ from .views import (
     LibraryPolicyViewSet,
     NotificationViewSet,
     ResetPasswordAPIView,
+    StudentSelfRegisterAPIView,
     UserMeAPIView,
     UserCreateAPIView,
     UserDeleteAPIView,
@@ -24,6 +26,7 @@ router = DefaultRouter()
 router.register("libraries", LibraryViewSet, basename="library")
 router.register("library-policies", LibraryPolicyViewSet, basename="library-policy")
 router.register("notifications", NotificationViewSet, basename="notification")
+router.register("campus-students", CampusStudentViewSet, basename="campus-student")
 urlpatterns = [
     path("", include(router.urls)),
     path("users/admins/", AdminUsersAPIView.as_view(), name="users-admins"),
@@ -44,4 +47,5 @@ urlpatterns = [
     path("auth/me/", UserMeAPIView.as_view(), name="auth-me"),
     path("auth/login/", CustomTokenObtainPairView.as_view(), name="token-obtain-pair"),
     path("auth/token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
+    path("auth/register/student/", StudentSelfRegisterAPIView.as_view(), name="student-self-register"),
 ]

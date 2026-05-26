@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import Input from '@/components/new_form_elements/Input.vue';
 import Select from '@/components/new_form_elements/Select.vue';
 import Textarea from '@/components/new_form_elements/Textarea.vue';
@@ -7,19 +7,14 @@ import Form from '@/components/new_form_builder/Form.vue';
 import BarcodeScanner from '@/components/BarcodeScanner.vue';
 import { closeModal } from '@customizer/modal-x';
 import { useApiRequest } from '@/composables/useApiRequest';
-import {
-  CreateMaterial,
-  createMobileScanSession,
-  getMobileScanSession,
-  lookupMaterialBarcode,
-} from '../api/materialApi';
+import { CreateMaterial, lookupMaterialBarcode } from '../api/materialApi';
 import { toasted } from '@/utils/utils';
 import { useForm } from '@/components/new_form_builder/useForm';
 import { useMaterials } from '../store/materialStore';
 import { emitEntityMutation } from '@/utils/entitySync';
 import { getAllLibrary } from '@/features/library/api/libraryApi';
 import BaseIcon from '@/components/base/BaseIcon.vue';
-import { mdiBarcode, mdiCellphone, mdiClose, mdiContentCopy, mdiMagnify } from '@mdi/js';
+import { mdiBarcode, mdiClose, mdiMagnify } from '@mdi/js';
 
 const { submit } = useForm('addMaterialForm');
 const req = useApiRequest();
@@ -29,11 +24,8 @@ const currentStep = ref(1);
 const totalSteps = computed(() => 3);
 const showBarcodeScanner = ref(false);
 const lookupPending = ref(false);
-const mobileScanSession = ref(null);
-const mobileSessionPending = ref(false);
-const mobileLinkCopied = ref(false);
-let mobileSessionPollTimer = null;
-
+const lookupPreview = ref(null);
+const scannedBarcode = ref('');
 const currentType = computed(() => materialStore.createType || 'physical');
 const isDigital = computed(() => currentType.value === 'digital');
 const modalTitle = computed(() => isDigital.value ? 'Add New Digital Material' : 'Add New Physical Material');
@@ -57,7 +49,6 @@ const prefillData = reactive({
   title: '',
   author: '',
   isbn: '',
-  barcode: '',
   published_date: '',
   category: '',
   genre: '',
@@ -102,8 +93,6 @@ watch(
       if (!String(prefillData.condition || '').trim()) prefillData.condition = 'NEW';
       if (!String(prefillData.location || '').trim()) prefillData.location = 'STACK';
       if (!String(prefillData.can_borrow || '').trim()) prefillData.can_borrow = 'YES';
-    } else {
-      prefillData.barcode = '';
     }
   },
   { immediate: true }
@@ -139,70 +128,49 @@ function setPrefillValues(values = {}, options = {}) {
   });
 }
 
-function getLookupCode() {
-  if (isDigital.value) {
-    return String(prefillData.isbn || '').trim();
-  }
-  return String(prefillData.barcode || prefillData.isbn || '').trim();
-}
-
 function formatLookupSourceLabel(source) {
   const normalized = String(source || '').trim().toLowerCase();
   if (normalized === 'library') return 'existing library record';
-  if (normalized === 'openlibrary') return 'Open Library';
+  if (normalized === 'openlibrary' || normalized === 'openlibrary_search') return 'Open Library';
   if (normalized === 'google_books') return 'Google Books';
   return 'book metadata service';
 }
 
-function stopMobileSessionPolling() {
-  if (mobileSessionPollTimer) {
-    window.clearInterval(mobileSessionPollTimer);
-    mobileSessionPollTimer = null;
-  }
+function formatDisplayDate(value) {
+  const normalized = toDateInputValue(value);
+  if (!normalized) return '—';
+  const date = new Date(`${normalized}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return normalized;
+  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-function clearMobileScanSession() {
-  stopMobileSessionPolling();
-  mobileScanSession.value = null;
-  mobileSessionPending.value = false;
-  mobileLinkCopied.value = false;
-}
+function updateLookupPreview(data = {}, source = '') {
+  const title = String(data?.title || '').trim();
+  const author = String(data?.author || '').trim();
+  const published = toDateInputValue(data?.published_date);
+  const isbn = String(data?.isbn || prefillData.isbn || '').trim();
+  const barcode = String(scannedBarcode.value || '').trim();
 
-const mobileScanUrl = computed(() => {
-  const sessionId = mobileScanSession.value?.session_id;
-  if (!sessionId || typeof window === 'undefined') return '';
-  return `${window.location.origin}/mobile-scanner/${sessionId}`;
-});
-
-onBeforeUnmount(() => {
-  stopMobileSessionPolling();
-});
-
-async function copyMobileScanLink() {
-  if (!mobileScanUrl.value) return;
-  try {
-    await navigator.clipboard.writeText(mobileScanUrl.value);
-    mobileLinkCopied.value = true;
-    toasted(true, 'Phone scanner link copied');
-    window.setTimeout(() => {
-      mobileLinkCopied.value = false;
-    }, 1600);
-  } catch {
-    toasted(false, '', 'Could not copy the phone scanner link.');
+  if (!title && !author && !published && !isbn && !barcode) {
+    lookupPreview.value = null;
+    return;
   }
+
+  lookupPreview.value = {
+    title: title || '—',
+    author: author || '—',
+    published_label: formatDisplayDate(published),
+    isbn: isbn || '—',
+    barcode: barcode || '—',
+    source: formatLookupSourceLabel(source),
+  };
 }
 
 function syncScannedCode(scannedCode) {
   const normalized = String(scannedCode || '').trim();
   if (!normalized) return;
+  scannedBarcode.value = normalized;
   const digitsOnly = normalized.replace(/\D/g, '');
-
-  if (isDigital.value) {
-    setPrefillValues({ isbn: digitsOnly.length === 10 || digitsOnly.length === 13 ? digitsOnly : normalized });
-    return;
-  }
-
-  setPrefillValues({ barcode: normalized });
   if (digitsOnly.length === 10 || digitsOnly.length === 13) {
     setPrefillValues({ isbn: digitsOnly });
   }
@@ -217,7 +185,6 @@ function applyLookupData(data = {}, options = {}) {
     title: data.title,
     author: data.author,
     isbn: data.isbn || (digitsOnly.length === 10 || digitsOnly.length === 13 ? digitsOnly : ''),
-    barcode: data.barcode || (!isDigital.value ? scannedCode : ''),
     published_date: data.published_date,
     category: data.category,
     genre: data.genre,
@@ -239,6 +206,58 @@ function applyLookupData(data = {}, options = {}) {
       { onlyIfBlank: source !== 'library' }
     );
   }
+}
+
+function getLookupCode() {
+  const fromIsbn = String(prefillData.isbn || '').trim();
+  if (fromIsbn) return fromIsbn;
+  return String(scannedBarcode.value || '').trim();
+}
+
+async function lookupScannedMaterial(rawCode, options = {}) {
+  const code = String(rawCode || getLookupCode() || '').trim();
+  if (!code) {
+    toasted(false, '', 'Scan a barcode or enter an ISBN first.');
+    return;
+  }
+
+  lookupPending.value = true;
+  try {
+    const res = await lookupMaterialBarcode(code);
+    const payload = res?.data || res;
+
+    if (payload?.found && payload?.data) {
+      syncScannedCode(code);
+      applyLookupData(payload.data, {
+        scannedCode: code,
+        source: payload.source,
+      });
+      updateLookupPreview(payload.data, payload.source);
+      toasted(true, `Book details loaded from ${formatLookupSourceLabel(payload.source)}`);
+      return;
+    }
+
+    lookupPreview.value = null;
+    if (!options.silentNotFound) {
+      toasted(false, '', 'No book metadata found for this code. You can continue manually.');
+    }
+  } catch {
+    toasted(false, '', 'Could not look up metadata for this code.');
+  } finally {
+    lookupPending.value = false;
+  }
+}
+
+async function handleBarcodeScan(code) {
+  const scanned = String(code || '').trim();
+  if (!scanned) return;
+  syncScannedCode(scanned);
+  await lookupScannedMaterial(scanned, { silentNotFound: false });
+  showBarcodeScanner.value = false;
+}
+
+function searchCurrentCode() {
+  lookupScannedMaterial(getLookupCode(), { silentNotFound: false });
 }
 
 function nextStep() {
@@ -337,6 +356,10 @@ function handleCreate({ values }) {
     Object.entries(values || {}).forEach(([key, value]) => {
       payload.append(key, value ?? '');
     });
+    const barcode = String(scannedBarcode.value || '').trim();
+    if (barcode) {
+      payload.set('barcode', barcode);
+    }
     payload.set('published_date', toDateInputValue(values.published_date));
     payload.set('price', Number(values.price || 0));
     payload.set('can_borrow', String(values.can_borrow || '').toUpperCase() === 'YES');
@@ -367,100 +390,6 @@ function validateAndNext() {
   nextStep();
 }
 
-async function lookupScannedMaterial(rawCode, options = {}) {
-  const code = String(rawCode || '').trim();
-  if (!code) {
-    toasted(false, '', 'Enter or scan an ISBN or barcode first.');
-    return;
-  }
-
-  lookupPending.value = true;
-  try {
-    const res = await lookupMaterialBarcode(code);
-    const payload = res?.data || res;
-
-    if (payload?.found && payload?.data) {
-      applyLookupData(payload.data, {
-        scannedCode: code,
-        source: payload.source,
-      });
-      toasted(true, `Book details loaded from ${formatLookupSourceLabel(payload.source)}`);
-      return;
-    }
-
-    if (!options.silentNotFound) {
-      toasted(false, '', 'No book metadata found for this code. You can continue manually.');
-    }
-  } catch {
-    toasted(false, '', 'Could not look up metadata for this code.');
-  } finally {
-    lookupPending.value = false;
-  }
-}
-
-async function handleBarcodeScan(code) {
-  const scanned = String(code || '').trim();
-  if (!scanned) return;
-
-  showBarcodeScanner.value = false;
-  syncScannedCode(scanned);
-  clearMobileScanSession();
-  await lookupScannedMaterial(scanned, { silentNotFound: false });
-}
-
-async function refreshMobileScanSession(sessionId, options = {}) {
-  if (!sessionId) return;
-  try {
-    const res = await getMobileScanSession(sessionId);
-    if (!res?.success) {
-      if (options.notifyOnError) {
-        toasted(false, '', res?.error || 'Phone scanner session expired.');
-      }
-      clearMobileScanSession();
-      return;
-    }
-
-    const payload = res?.data || res;
-    mobileScanSession.value = payload;
-    if (payload?.status === 'scanned' && payload?.code) {
-      stopMobileSessionPolling();
-      await handleBarcodeScan(payload.code);
-    }
-  } catch {
-    if (options.notifyOnError) {
-      toasted(false, '', 'Could not refresh the phone scanner session.');
-    }
-    clearMobileScanSession();
-  }
-}
-
-function startMobileSessionPolling(sessionId) {
-  stopMobileSessionPolling();
-  refreshMobileScanSession(sessionId);
-  mobileSessionPollTimer = window.setInterval(() => {
-    refreshMobileScanSession(sessionId);
-  }, 2000);
-}
-
-async function startMobileScanSession() {
-  mobileSessionPending.value = true;
-  try {
-    const res = await createMobileScanSession();
-    if (!res?.success) {
-      toasted(false, '', res?.error || 'Could not start phone scanner session.');
-      return;
-    }
-
-    mobileScanSession.value = res?.data || res;
-    mobileLinkCopied.value = false;
-    startMobileSessionPolling(mobileScanSession.value?.session_id);
-    toasted(true, 'Phone scanner session is ready.');
-  } catch {
-    toasted(false, '', 'Could not start phone scanner session.');
-  } finally {
-    mobileSessionPending.value = false;
-  }
-}
 </script>
 
 <template>
@@ -518,28 +447,86 @@ async function startMobileScanSession() {
             <h3 class="step-title-heading">Basic Information</h3>
 
             <div v-if="!isDigital" class="scan-panel">
-              <button
-                type="button"
-                class="scan-toggle-btn"
-                :class="{ active: showBarcodeScanner }"
-                @click="showBarcodeScanner = !showBarcodeScanner"
-              >
-                <BaseIcon :path="mdiBarcode" size="18" />
-                {{ showBarcodeScanner ? 'Hide scanner' : 'Scan ISBN / barcode' }}
-              </button>
+              <div class="scan-actions-row">
+                <button
+                  type="button"
+                  class="scan-toggle-btn"
+                  :class="{ active: showBarcodeScanner }"
+                  @click="showBarcodeScanner = !showBarcodeScanner"
+                >
+                  <BaseIcon :path="mdiBarcode" size="18" />
+                  {{ showBarcodeScanner ? 'Hide scanner' : 'Scan ISBN / barcode' }}
+                </button>
+                <button
+                  type="button"
+                  class="scan-search-btn"
+                  :disabled="lookupPending"
+                  @click="searchCurrentCode"
+                >
+                  <BaseIcon :path="mdiMagnify" size="18" />
+                  Load book details
+                </button>
+              </div>
               <p v-if="lookupPending" class="scan-status">Looking up book information...</p>
               <BarcodeScanner
                 v-if="showBarcodeScanner"
                 :active="showBarcodeScanner"
+                :allow-image-upload="false"
                 @scan="handleBarcodeScan"
               />
             </div>
 
+            <div v-if="lookupPreview" class="lookup-preview">
+              <p class="lookup-preview-title">Scanned book details</p>
+              <dl class="lookup-preview-grid">
+                <div>
+                  <dt>Title</dt>
+                  <dd>{{ lookupPreview.title }}</dd>
+                </div>
+                <div>
+                  <dt>Author</dt>
+                  <dd>{{ lookupPreview.author }}</dd>
+                </div>
+                <div>
+                  <dt>Published</dt>
+                  <dd>{{ lookupPreview.published_label }}</dd>
+                </div>
+                <div>
+                  <dt>ISBN / Barcode</dt>
+                  <dd>{{ lookupPreview.isbn !== '—' ? lookupPreview.isbn : lookupPreview.barcode }}</dd>
+                </div>
+              </dl>
+              <p class="lookup-preview-source">Source: {{ lookupPreview.source }}</p>
+            </div>
+
             <div class="form-grid">
-              <Input name="title" validation="required" label="Title" :attributes="{ placeholder: 'Material Title' }" />
-              <Input name="author" validation="required" label="Author" :attributes="{ placeholder: 'Author Name' }" />
-              <Input name="isbn" label="ISBN / Barcode" :attributes="{ placeholder: 'Scan or enter ISBN' }" />
-              <Input name="published_date" type="date" label="Published Date" validation="required" />
+              <Input
+                name="title"
+                validation="required"
+                label="Title"
+                :value="prefillData.title"
+                :attributes="{ placeholder: 'Material Title' }"
+              />
+              <Input
+                name="author"
+                validation="required"
+                label="Author"
+                :value="prefillData.author"
+                :attributes="{ placeholder: 'Author Name' }"
+              />
+              <Input
+                name="isbn"
+                :label="isDigital ? 'ISBN' : 'ISBN (optional)'"
+                :value="prefillData.isbn"
+                :attributes="{ placeholder: isDigital ? 'Enter ISBN' : 'Enter ISBN if available' }"
+              />
+              <Input
+                name="published_date"
+                type="date"
+                label="Published Date"
+                validation="required"
+                :value="prefillData.published_date"
+              />
             </div>
           </div>
 
@@ -547,18 +534,39 @@ async function startMobileScanSession() {
           <div v-show="currentStep === 2" class="step-content">
             <h3 class="step-title-heading">Classification Details</h3>
             <div class="form-grid">
-              <Select name="category" label="Category" validation="required"
+              <Select
+                name="category"
+                label="Category"
+                validation="required"
+                :value="prefillData.category"
                 :options="['BOOK', 'MAGAZINE', 'RESEARCH PAPER', 'JOURNALS', 'THESIS']"
-                :attributes="{ placeholder: 'Select Category' }" />
+                :attributes="{ placeholder: 'Select Category' }"
+              />
 
-              <Select name="genre" label="Genre" validation="required"
+              <Select
+                name="genre"
+                label="Genre"
+                validation="required"
+                :value="prefillData.genre"
                 :options="['SCIENCE', 'FICTION', 'HISTORY', 'BIOGRAPHY','TECHNOLOGY','EDUCATIONAL', 'OTHER']"
-                :attributes="{ placeholder: 'Select Genre' }" />
+                :attributes="{ placeholder: 'Select Genre' }"
+              />
               
-              <Select name="language" label="Language" validation="required"
+              <Select
+                name="language"
+                label="Language"
+                validation="required"
+                :value="prefillData.language"
                 :options="['English', 'Amharic']"
-                :attributes="{ placeholder: 'e.g. English, Amharic' }" />
-              <Select name="department" label="Department" :options="departments" :attributes="{ placeholder: 'Target Department' }" />
+                :attributes="{ placeholder: 'e.g. English, Amharic' }"
+              />
+              <Select
+                name="department"
+                label="Department"
+                :value="prefillData.department"
+                :options="departments"
+                :attributes="{ placeholder: 'Target Department' }"
+              />
               <Select
                 :obj="true"
                 name="library"
@@ -568,8 +576,14 @@ async function startMobileScanSession() {
                   label: library?.name,
                   value: library?.id,
                 }))"
-                :value="userLibraryId"
+                :value="prefillData.library || userLibraryId"
                 :attributes="{ placeholder: 'Select Library', disabled: !isSuperAdmin ? 'disabled' : undefined }"
+              />
+              <Textarea
+                name="description"
+                label="Description"
+                :value="prefillData.description"
+                :attributes="{ placeholder: 'Optional description', rows: 3 }"
               />
             </div>
           </div>
@@ -606,19 +620,46 @@ async function startMobileScanSession() {
                 :attributes="{ accept: '.jpg,.jpeg,.png,.webp,.gif' }"
                 label="Material Image (Optional)"
               />
-              <Select name="location" label="Library Location" validation="required"
+              <Select
+                name="location"
+                label="Library Location"
+                validation="required"
+                :value="prefillData.location"
                 :options="['STACK', 'SHELF','OTHER']"
-                :attributes="{ placeholder: 'Select Location' }" />
+                :attributes="{ placeholder: 'Select Location' }"
+              />
               
-              <Select name="condition" label="Condition" validation="required"
+              <Select
+                name="condition"
+                label="Condition"
+                validation="required"
+                :value="prefillData.condition"
                 :options="['NEW', 'GOOD', 'FAIR', 'DAMAGED']"
-                :attributes="{ placeholder: 'Select Condition' }" />
+                :attributes="{ placeholder: 'Select Condition' }"
+              />
               
-              <Input name="total_copies" type="number" validation="required|numeric" label="Total Copies" />
-              <Input name="price" type="number" label="Price" :attributes="{ step: '0.01' }" />
-              <Select name="can_borrow" label="Can be Borrowed?" validation="required"
+              <Input
+                name="total_copies"
+                type="number"
+                validation="required|numeric"
+                label="Total Copies"
+                :value="prefillData.total_copies"
+              />
+              <Input
+                name="price"
+                type="number"
+                label="Price"
+                :value="prefillData.price"
+                :attributes="{ step: '0.01' }"
+              />
+              <Select
+                name="can_borrow"
+                label="Can be Borrowed?"
+                validation="required"
+                :value="prefillData.can_borrow"
                 :options="['YES', 'NO']"
-                :attributes="{ placeholder: 'Select Status' }" />
+                :attributes="{ placeholder: 'Select Status' }"
+              />
             </div>
           </div>
         </Form>
@@ -1040,11 +1081,16 @@ async function startMobileScanSession() {
   gap: 0.75rem;
 }
 
+.scan-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
 .scan-toggle-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  align-self: flex-start;
   padding: 0.5rem 0.9rem;
   border-radius: 0.75rem;
   border: 1px solid rgba(245, 158, 11, 0.45);
@@ -1059,10 +1105,82 @@ async function startMobileScanSession() {
   background: rgba(245, 158, 11, 0.18);
 }
 
+.scan-search-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(37, 99, 235, 0.35);
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.scan-search-btn:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
 .scan-status {
   margin: 0;
   font-size: 0.8rem;
   color: #b45309;
+}
+
+.lookup-preview {
+  margin-bottom: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  background: rgba(236, 253, 245, 0.9);
+}
+
+.lookup-preview-title {
+  margin: 0 0 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #047857;
+}
+
+.lookup-preview-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.65rem;
+  margin: 0;
+}
+
+@media (min-width: 640px) {
+  .lookup-preview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.lookup-preview-grid dt {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #065f46;
+}
+
+.lookup-preview-grid dd {
+  margin: 0.15rem 0 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #064e3b;
+  word-break: break-word;
+}
+
+.lookup-preview-source {
+  margin: 0.65rem 0 0;
+  font-size: 0.75rem;
+  color: #047857;
 }
 
 .dark .file-hint {

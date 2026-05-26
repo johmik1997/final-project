@@ -36,18 +36,18 @@ const { isDark, toggleTheme } = useTheme()
 
 <style scoped>
 .theme-toggle-btn {
-  @apply p-2 rounded-lg transition-all duration-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-amber-500/50;
+  @apply p-2 rounded-lg transition-all duration-200 hover:bg-amber-500/10 focus:outline-none focus:ring-2 focus:ring-amber-500/50;
 }
 
 .theme-icon {
-  @apply w-5 h-5 text-slate-300 hover:text-amber-400 transition-colors duration-200;
+  @apply w-5 h-5 text-slate-600 dark:text-slate-300 hover:text-amber-500 dark:hover:text-amber-400 transition-colors duration-200;
 }
 
 .sun-icon {
-  @apply text-yellow-400;
+  @apply text-amber-500;
 }
 
 .moon-icon {
-  @apply text-slate-300;
+  @apply text-slate-600 dark:text-slate-300;
 }
 </style>

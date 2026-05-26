@@ -267,6 +267,17 @@ loadSavedMaterials();
   color: #f8fafc;
 }
 
+.dark .eyebrow {
+  color: #fb923c;
+}
+
+.dark .stat-label,
+.dark .saved-library,
+.dark .saved-author,
+.dark .saved-date {
+  color: #94a3b8;
+}
+
 .hero-icon {
   display: grid;
   place-items: center;
@@ -499,6 +510,33 @@ loadSavedMaterials();
   color: #9a3412;
   font-size: 0.72rem;
   font-weight: 600;
+}
+
+.dark .saved-meta span {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fdba74;
+}
+
+.dark .saved-cover {
+  background: linear-gradient(135deg, #1e293b, #334155);
+}
+
+.dark .loading-state,
+.dark .empty-state {
+  background: rgba(15, 23, 42, 0.82);
+  border-color: rgba(51, 65, 85, 0.9);
+}
+
+.dark .empty-state h3 {
+  color: #f8fafc;
+}
+
+.dark .empty-state p {
+  color: #94a3b8;
+}
+
+.dark .loading-state p {
+  color: #94a3b8;
 }
 
 .saved-actions {

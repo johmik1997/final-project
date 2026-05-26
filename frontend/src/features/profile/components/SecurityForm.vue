@@ -28,14 +28,14 @@ function handleChangePassword({ values }) {
   <div class="w-full flex justify-center">
     <Form
     v-slot="{submit}"
-      class="flex flex-col w-[33rem] box-border rounded-md border px-5 py-8 border-base-clr/20 gap-6"
+      class="flex flex-col w-full max-w-[33rem] box-border rounded-md border px-5 py-8 border-base-clr/20 dark:border-slate-600 gap-6 bg-gray-50/50 dark:bg-slate-900/40"
       id="SecurityForm"
     >
       <div class="flex-col flex gap-4 text-center w-full">
-        <span class="font-semibold text-lg text-gray-500"
+        <span class="font-semibold text-lg text-gray-700 dark:text-slate-200"
           >Change Login Password</span
         >
-        <span class="text-gray-500">
+        <span class="text-gray-500 dark:text-slate-400">
           Enter your new password in the provided field. After creating a strong
           password, confirm it by entering it again. Keep your password
           confidential and avoid using easily guessable information.</span

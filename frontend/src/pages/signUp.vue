@@ -1,225 +1,244 @@
 <script setup>
 import Input from '@/components/new_form_elements/Input.vue';
 import InputPassword from '@/components/new_form_elements/InputPassword.vue';
-import Select from '@/components/new_form_elements/Select.vue';
 import Form from '@/components/new_form_builder/Form.vue';
 import { useForm } from '@/components/new_form_builder/useForm';
-
 import { useApiRequest } from '@/composables/useApiRequest';
-import { toasted, allRequest } from '@/utils/utils';
+import { toasted } from '@/utils/utils';
 import { useRouter } from 'vue-router';
-import { ref, watch } from 'vue';
-import { getAllRole } from '@/features/roles/Api/RoleApi';
-import { CreateUser, verifyUser, sendVerificationCode } from '@/features/users/Api/UserApi';
+import { registerStudent } from '@/features/users/Api/UserApi';
 
-const { submit } = useForm('signup-form');
-
+const { submit } = useForm('student-signup-form');
 const router = useRouter();
 const signupReq = useApiRequest();
-const verifyReq = useApiRequest();
-const rolereq = useApiRequest();
-const clientRoleUuid = ref(null);
-
-// Verification modal state
-const showVerificationModal = ref(false);
-const verificationCode = ref("");
-const userPhoneNumber = ref("");
-
-rolereq.send(() =>
-  allRequest({
-    roles: getAllRole({ page: 1, limit: 500 }),
-  })
-);
-
-watch(
-  () => rolereq.response.value?.roles?.content,
-  (roles) => {
-    if (roles?.length) {
-      const client = roles.find((r) => r.roleName?.toLowerCase() === 'client');
-      if (client) {
-        clientRoleUuid.value = client.roleUuid;
-      }
-    }
-  },
-  { immediate: true }
-);
 
 function handleSignup({ values }) {
-  values.userType = 'CLIENT';
-  values.roleUuid = clientRoleUuid.value;
+  const payload = {
+    id_number: String(values.id_number || '').trim(),
+    full_name: String(values.full_name || '').trim(),
+    phone: String(values.phone || '').trim(),
+    email: String(values.email || '').trim(),
+    password: values.password,
+    confirm_password: values.confirm_password,
+  };
 
   signupReq.send(
-    () => CreateUser(values),
+    () => registerStudent(payload),
     (res) => {
       if (res.success) {
-        toasted(true, 'Signup successful');
-        // Show verification modal
-        userPhoneNumber.value = values.mobilePhone;
-        showVerificationModal.value = true;
-      } else {
-        toasted(false, "", res.error || 'Signup failed');
-      }
-    }
-  );
-}
-
-function submitVerification() {
-  if (!verificationCode.value.trim()) {
-    toasted(false, "", "Please enter verification code");
-    return;
-  }
-
-  verifyReq.send(
-    () => verifyUser(userPhoneNumber.value, verificationCode.value),
-    (res) => {
-      if (res.success) {
-        toasted(true, "Account verified successfully");
-        closeVerificationModal();
+        toasted(true, res.data?.detail || 'Registration successful. You can sign in now.');
         router.push('/login');
-      } else {
-        toasted(false, "", res.error || "Verification failed");
+        return;
       }
+      toasted(false, '', res.error || 'Registration failed.');
     }
   );
-}
-
-function sendVerification() {
- 
-  verifyReq.send(
-    () => sendVerificationCode(userPhoneNumber.value),
-    (res) => {
-      if (res.success) {
-        toasted(res.success, "Verification Code Sent successfully",res.error);
-      } else {
-        toasted(false, "", res.error || "Verification failed");
-      }
-    }
-  );
-}
-function skipVerification() {
-  toasted(true, "You can verify your account later from the login page");
-  closeVerificationModal();
-  router.push('/login');
-}
-
-function closeVerificationModal() {
-  showVerificationModal.value = false;
-  verificationCode.value = "";
-  userPhoneNumber.value = "";
 }
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#3C3C9E] to-[#5A5AB2] py-10 px-5">
-    <div class="bg-white shadow-2xl rounded-xl p-10 max-w-5xl w-full">
-      <!-- Header -->
-      <div class="mb-6 text-center">
-        <h2 class="text-3xl font-bold text-[#3C3C9E]">Create an Account</h2>
-        <p class="text-gray-600 mt-2">Sign up to get started with your insurance management</p>
-      </div>
-
-      <!-- Form -->
-      <Form id="signup-form" :inner="false"  class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <Input name="email"  label="Email" :attributes="{ placeholder: 'Enter your email' }" />
-        <InputPassword name="password" validation="required|min:6" label="Password" :attributes="{ placeholder: 'Secure password', required: true }" />
-        <Select name="title" label="Title" validation="required" :options="['Mr.', 'Ms.', 'Dr.', 'Prof.']" :attributes="{ placeholder: 'Select your title', required: true }" />
-
-        <Input name="firstName" validation="required|alpha" label="First Name" :attributes="{ placeholder: 'First name' , required: true }" />
-        <Input name="fatherName" validation="required|alpha" label="Father Name" :attributes="{ placeholder: 'Father name', required: true }" />
-        <Input name="grandFatherName"  label="Grandfather Name" :attributes="{ placeholder: 'Grandfather name' }" />
-
-        <Select name="gender" label="Gender" validation="required" :options="['Male', 'Female']" :attributes="{ placeholder: 'Select your gender', required: true }" />
-        <Input name="mobilePhone" label="Mobile Phone" validation="required|phone" :attributes="{ placeholder: '09XXXXXXXX', required: true }" />
-
-        <!-- Hidden fields -->
-        <input type="hidden" name="userType" value="CLIENT" />
-        <input type="hidden" name="roleUuid" :value="clientRoleUuid" />
-
-        <!-- Submit Button -->
-        <div class="col-span-full mt-4 flex justify-end">
-          <button
-            type="button"
-            @click.prevent="submit(handleSignup)"
-            class="bg-[#3C3C9E] hover:bg-[#2a2a82] text-white font-semibold px-8 py-3 rounded-lg shadow transition"
-            :disabled="!clientRoleUuid || signupReq.pending.value"
-          >
-            <span v-if="signupReq.pending.value">Signing Up...</span>
-            <span v-else>Sign Up</span>
-          </button>
-        </div>
-      </Form>
-
-      <!-- Already have an account -->
-      <div class="text-center mt-6 text-sm text-gray-600">
-        Already have an account?
-        <router-link to="/login" class="text-[#3C3C9E] font-medium hover:underline">
-          Login here
-        </router-link>
-      </div>
-    </div>
-
-    <!-- Verification Modal -->
-    <div v-if="showVerificationModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div class="bg-white rounded-xl w-full max-w-md shadow-lg p-6">
-        <!-- Close Button -->
-        <button
-          @click="closeVerificationModal"
-          class="absolute top-4 right-4 text-gray-600 hover:text-gray-900"
+  <div
+    class="min-h-screen grid place-items-center p-6 transition-all duration-300"
+    :class="
+      isDarkTheme
+        ? 'bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800'
+        : 'bg-gradient-to-br from-orange-50 via-slate-50 to-blue-50'
+    "
+  >
+    <div
+      class="w-full max-w-3xl rounded-3xl border backdrop-blur-sm p-7 shadow-2xl transition-all duration-300"
+      :class="
+        isDarkTheme
+          ? 'bg-slate-900/70 border-white/10'
+          : 'bg-white/90 border-slate-200'
+      "
+    >
+      <header class="mb-7">
+        <h1
+          class="text-3xl font-bold"
+          :class="isDarkTheme ? 'text-white' : 'text-slate-900'"
         >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+          Student Registration
+        </h1>
 
-        <!-- Title -->
-        <h3 class="text-lg font-bold text-gray-800 mb-4 py-2 border-b">
-          Verify Your Account
-        </h3>
-
-        <!-- Message -->
-        <p class="text-gray-600 text-sm leading-relaxed mb-4">
-          Account created successfully! Please enter the verification code sent to your phone number: <strong>{{ userPhoneNumber }}</strong>
+        <p
+          class="mt-3 text-sm leading-6"
+          :class="isDarkTheme ? 'text-slate-400' : 'text-slate-600'"
+        >
+          Create your library account using your university student ID.
+          Your details are verified against the campus student registry
+          before registration is approved.
         </p>
+      </header>
 
-        <!-- Verification Code Input -->
-        <div class="mb-5">
-          <label class="block text-sm font-medium text-gray-700 mb-1">
-            Verification Code
-          </label>
-          <input
-            type="text"
-            v-model="verificationCode"
-            placeholder="Enter verification code"
-            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            @keyup.enter="submitVerification"
+      <Form id="student-signup-form" :inner="false">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <Input
+            name="id_number"
+            label="Student ID Number"
+            validation="required"
+            :theme="isDarkTheme ? 'dark' : 'light'"
+            :attributes="{ placeholder: 'e.g. STU10001' }"
+          />
+
+          <Input
+            name="full_name"
+            label="Full Name"
+            validation="required"
+            :theme="isDarkTheme ? 'dark' : 'light'"
+            :attributes="{ placeholder: 'As shown on your university ID' }"
+          />
+
+          <Input
+            name="phone"
+            label="Phone Number"
+            validation="required"
+            :theme="isDarkTheme ? 'dark' : 'light'"
+            :attributes="{ placeholder: '09xxxxxxxx' }"
+          />
+
+          <Input
+            name="email"
+            label="Personal Email"
+            validation="required|email"
+            :theme="isDarkTheme ? 'dark' : 'light'"
+            :attributes="{ placeholder: 'you@example.com', type: 'email' }"
+          />
+
+          <InputPassword
+            name="password"
+            label="Password"
+            validation="required|min:8"
+            :theme="isDarkTheme ? 'dark' : 'light'"
+            :attributes="{ placeholder: 'At least 8 characters' }"
+          />
+
+          <InputPassword
+            name="confirm_password"
+            label="Confirm Password"
+            validation="required|min:8"
+            :theme="isDarkTheme ? 'dark' : 'light'"
+            :attributes="{ placeholder: 'Repeat password' }"
           />
         </div>
 
-        <!-- Buttons -->
-        <div class="flex justify-end gap-4 mt-2 pb-2">
+        <p
+          class="mt-5 text-sm leading-6"
+          :class="isDarkTheme ? 'text-amber-300' : 'text-amber-700'"
+        >
+          Registration is allowed only when your student ID exists in the
+          campus registry, your campus status is active, and your university
+          ID has not expired.
+        </p>
+
+        <div class="flex justify-between items-center mt-7 gap-4 flex-wrap">
           <button
-            @click="skipVerification"
-            class="bg-gray-500 text-white px-6 py-2 text-sm font-medium hover:bg-gray-600 rounded-md"
+            type="button"
+            class="px-5 py-2.5 rounded-xl font-semibold transition-all"
+            :class="
+              isDarkTheme
+                ? 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            "
+            @click="router.push('/login')"
           >
-            Skip for Now
+            Back to login
           </button>
-           <button
-            @click="sendVerification"
-            class="bg-blue-300 text-gray px-6 py-2 text-sm font-medium hover:bg-blue-400 rounded-md"
-          >
-            Send Code Again
-          </button>
+
           <button
-            @click="submitVerification"
-            :disabled="!verificationCode.trim() || verifyReq.pending.value"
-            :class="{'bg-blue-400 cursor-not-allowed': !verificationCode.trim(), 'bg-[#2E3365] hover:bg-[#1E224D]': verificationCode.trim()}"
-            class="text-white px-6 py-2 text-sm font-medium rounded-md transition-colors"
+            type="button"
+            class="px-6 py-2.5 rounded-xl font-semibold text-white bg-gradient-to-r from-amber-500 to-red-500 hover:shadow-lg hover:shadow-amber-500/20 transition-all"
+            :disabled="signupReq.pending.value"
+            @click.prevent="submit(handleSignup)"
           >
-            <span v-if="verifyReq.pending.value">Verifying...</span>
-            <span v-else>Verify</span>
+            {{ signupReq.pending.value ? 'Registering…' : 'Register' }}
           </button>
         </div>
-      </div>
+      </Form>
     </div>
   </div>
 </template>
+
+<style scoped>
+.signup-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: linear-gradient(160deg, #fff7ed 0%, #f8fafc 45%, #eff6ff 100%);
+}
+
+.signup-card {
+  width: 100%;
+  max-width: 42rem;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(203, 213, 225, 0.7);
+  border-radius: 1.25rem;
+  padding: 1.75rem;
+  box-shadow: 0 24px 48px -24px rgba(15, 23, 42, 0.35);
+}
+
+.signup-header h1 {
+  margin: 0;
+  font-size: 1.6rem;
+  color: #0f172a;
+}
+
+.signup-header p {
+  margin: 0.5rem 0 1.25rem;
+  color: #64748b;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 640px) {
+  .form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.hint {
+  margin: 1rem 0 0;
+  font-size: 0.8rem;
+  color: #92400e;
+  line-height: 1.45;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.btn-primary,
+.btn-secondary {
+  border-radius: 0.75rem;
+  padding: 0.55rem 1.1rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  border: none;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+  color: white;
+}
+
+.btn-primary:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: #f1f5f9;
+  color: #334155;
+}
+</style>

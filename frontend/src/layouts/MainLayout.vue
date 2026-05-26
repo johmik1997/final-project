@@ -3,7 +3,6 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, RouterView, useRoute } from "vue-router";
 import NavBar from "@/components/NavBar.vue";
 import LanguageSwitcher from "@/components/LanguageSwitcher.vue";
-import ThemeToggle from "@/components/ThemeToggle.vue";
 import navs from "@/config/navs";
 import { useAuth } from "@/stores/auth";
 import { normalizeRoleValue } from "@/utils/authNavigation";
@@ -251,7 +250,6 @@ onUnmounted(() => {
             
             <NavBar v-model="search" class="navbar-wrapper" :title="$route.name || 'Workspace'" />
             <div class="header-right">
-              <ThemeToggle class="theme-toggle" />
               <LanguageSwitcher compact class="language-switcher" />
             </div>
           </div>

@@ -4,6 +4,10 @@ import { getQueryFormObject } from "@/utils/utils.js";
 const api = new ApiService();
 const path = "/user/users";
 
+export function registerStudent(data) {
+  return api.post("/user/auth/register/student/", data);
+}
+
 // ----------------- EXISTING -----------------
 export function CreateUser(data) {
   return api.addAuthenticationHeader().post(`${path}/create/`, data);

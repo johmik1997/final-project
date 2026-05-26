@@ -10,6 +10,7 @@ inflection==0.5.1
 jsonschema==4.17.3
 pillow==12.1.0
 PyMuPDF==1.26.5
+reportlab==4.2.5
 PyJWT==2.11.0
 pyrsistent==0.20.0
 PyYAML==6.0.3

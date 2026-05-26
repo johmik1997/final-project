@@ -4,8 +4,6 @@ import logging
 import re
 import threading
 from dataclasses import dataclass
-from html import unescape
-
 import requests
 from django.conf import settings
 from django.core.files.base import ContentFile
@@ -234,6 +232,9 @@ def _extract_people_names(raw_value):
 
 
 def _build_external_lookup_payload(*, source, isbn, title="", author="", genre="OTHER", published_date="", language="", publisher="", description=""):
+    title = str(title or "").strip()
+    if _is_invalid_book_title(title):
+        return {"found": False, "source": source, "data": {"isbn": isbn}}
     return {
         "found": bool(title),
         "source": source,
@@ -257,11 +258,66 @@ def _build_external_lookup_payload(*, source, isbn, title="", author="", genre="
     }
 
 
+def _lookup_open_library_isbn_json(isbn: str):
+    """Primary Open Library lookup via structured ISBN JSON API."""
+    try:
+        response = requests.get(
+            f"https://openlibrary.org/isbn/{isbn}.json",
+            headers={"User-Agent": "EbookLibrary/1.0 (metadata-lookup)"},
+            timeout=8,
+        )
+        if response.status_code == 404:
+            return {"found": False, "source": "openlibrary", "data": {"isbn": isbn}}
+        response.raise_for_status()
+        payload = response.json() or {}
+
+        title = str(payload.get("title") or "").strip()
+        authors = payload.get("authors") or []
+        author_keys = [item.get("key") for item in authors if isinstance(item, dict) and item.get("key")]
+        author_names = []
+        for author_key in author_keys[:3]:
+            author_response = requests.get(
+                f"https://openlibrary.org{author_key}.json",
+                headers={"User-Agent": "EbookLibrary/1.0 (metadata-lookup)"},
+                timeout=6,
+            )
+            if author_response.ok:
+                author_payload = author_response.json() or {}
+                name = str(author_payload.get("name") or "").strip()
+                if name:
+                    author_names.append(name)
+
+        publish_dates = payload.get("publish_dates") or []
+        published_date = _extract_published_date(publish_dates[0] if publish_dates else payload.get("publish_date"))
+        publishers = payload.get("publishers") or []
+        publisher_name = ", ".join(str(name).strip() for name in publishers[:2] if str(name).strip())
+        languages = payload.get("languages") or []
+        language = ""
+        if languages and isinstance(languages[0], dict):
+            language = _normalize_language_name(str(languages[0].get("key", "")).split("/")[-1])
+
+        return _build_external_lookup_payload(
+            source="openlibrary",
+            isbn=isbn,
+            title=title,
+            author=", ".join(author_names),
+            genre=_map_open_library_genre(payload.get("subjects")),
+            published_date=published_date,
+            language=language,
+            publisher=publisher_name,
+            description=str(payload.get("description") or "").strip(),
+        )
+    except Exception:
+        logger.exception("Open Library ISBN JSON lookup failed for ISBN %s", isbn)
+        return {"found": False, "source": "openlibrary", "data": {"isbn": isbn}}
+
+
 def _lookup_open_library_search_metadata(isbn: str):
     try:
         response = requests.get(
             "https://openlibrary.org/search.json",
             params={"isbn": isbn, "limit": 1},
+            headers={"User-Agent": "EbookLibrary/1.0 (metadata-lookup)"},
             timeout=8,
         )
         response.raise_for_status()
@@ -298,6 +354,7 @@ def _lookup_google_books_metadata(isbn: str):
         response = requests.get(
             "https://www.googleapis.com/books/v1/volumes",
             params={"q": f"isbn:{isbn}", "maxResults": 1},
+            headers={"User-Agent": "EbookLibrary/1.0 (metadata-lookup)"},
             timeout=8,
         )
         response.raise_for_status()
@@ -326,236 +383,93 @@ def _lookup_google_books_metadata(isbn: str):
         return {"found": False, "source": "google_books", "data": {"isbn": isbn}}
 
 
-def _extract_ld_json_book(html_text: str):
-    matches = re.findall(
-        r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
-        html_text,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    for match in matches:
-        payload = match.strip()
-        if not payload:
-            continue
-        try:
-            parsed = json.loads(payload)
-        except json.JSONDecodeError:
-            continue
-
-        stack = [parsed]
-        while stack:
-            current = stack.pop()
-            if isinstance(current, list):
-                stack.extend(current)
-                continue
-            if not isinstance(current, dict):
-                continue
-
-            current_type = current.get("@type")
-            type_values = current_type if isinstance(current_type, list) else [current_type]
-            normalized_types = {str(item or "").strip().lower() for item in type_values}
-            if {"book", "product"} & normalized_types:
-                return current
-            stack.extend(current.values())
-    return {}
+_INVALID_BOOK_TITLE_PATTERNS = (
+    "find-more-books.com",
+    "compare book prices",
+    "we love books",
+    "happy you are here",
+    "hello! happy",
+    "captcha",
+    "bot detected",
+    "verify you are human",
+    "access denied",
+    "eurobuch",
+    "sign in to continue",
+    "cloudflare",
+    "security check",
+    "anti-bot",
+    "are you a robot",
+)
 
 
-def _extract_meta_content(html_text: str, attr_name: str, attr_value: str):
-    pattern = (
-        rf'<meta[^>]+{attr_name}=["\']{re.escape(attr_value)}["\'][^>]+content=["\']([^"\']+)["\']'
-        rf'|<meta[^>]+content=["\']([^"\']+)["\'][^>]+{attr_name}=["\']{re.escape(attr_value)}["\']'
-    )
-    match = re.search(pattern, html_text, flags=re.IGNORECASE)
-    if not match:
-        return ""
-    return unescape(next(group for group in match.groups() if group))
-
-
-def _html_to_text(html_text: str) -> str:
-    text = re.sub(r"<script\b[^>]*>.*?</script>", " ", html_text, flags=re.IGNORECASE | re.DOTALL)
-    text = re.sub(r"<style\b[^>]*>.*?</style>", " ", text, flags=re.IGNORECASE | re.DOTALL)
-    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"</(p|div|li|h1|h2|h3|tr|td|section|article)>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = unescape(text)
-    text = re.sub(r"[ \t\r\f\v]+", " ", text)
-    text = re.sub(r"\n\s*\n+", "\n", text)
-    return text.strip()
-
-
-def _is_generic_catalog_title(value: str) -> bool:
+def _is_invalid_book_title(value: str) -> bool:
     normalized = str(value or "").strip().lower()
-    if not normalized:
+    if not normalized or len(normalized) < 2:
         return True
-    generic_needles = (
-        "find-more-books.com - buy used or antique books",
-        "find-more-books.com is the price comparison site",
-        "buy used or antique books at reduced prices",
-        "compare book prices",
-    )
-    return any(needle in normalized for needle in generic_needles)
+    if len(normalized) > 220:
+        return True
+    return any(pattern in normalized for pattern in _INVALID_BOOK_TITLE_PATTERNS)
 
 
-def _clean_catalog_title(value: str) -> str:
-    title = re.sub(r"\s+", " ", str(value or "")).strip()
-    title = re.sub(r"\s*-\s*find-more-books.*$", "", title, flags=re.IGNORECASE).strip()
-    title = re.sub(r"\s*\|\s*find-more-books.*$", "", title, flags=re.IGNORECASE).strip()
-    return title
+def _lookup_external_isbn_metadata(isbn: str):
+    """Resolve ISBN metadata using trusted public APIs only (no HTML scraping)."""
+    isbn_json_result = _lookup_open_library_isbn_json(isbn)
+    if isbn_json_result.get("found"):
+        return isbn_json_result
 
-
-def _extract_labeled_value(text: str, label: str) -> str:
-    pattern = rf"{re.escape(label)}\s*:\s*(.+?)(?=\n[A-Z][A-Za-z0-9 &/+-]{{1,40}}\s*:|\n###|\nAdd to |\nClick on |\nRated |\nBook Summary:|$)"
-    match = re.search(pattern, text, flags=re.IGNORECASE | re.DOTALL)
-    if not match:
-        return ""
-    value = re.sub(r"\s+", " ", match.group(1)).strip(" :-")
-    return value
-
-
-def _split_author_names(value: str) -> str:
-    raw = str(value or "").strip()
-    if not raw:
-        return ""
-    parts = re.split(r",\s*|\s+and\s+|;\s*", raw)
-    cleaned = []
-    seen = set()
-    for part in parts:
-        item = part.strip()
-        if not item:
-            continue
-        key = item.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        cleaned.append(item)
-    return ", ".join(cleaned)
-
-
-def _extract_find_more_books_page_metadata(html_text: str):
-    text = _html_to_text(html_text)
-
-    title = ""
-    heading_match = re.search(r"<h1[^>]*>(.*?)</h1>", html_text, flags=re.IGNORECASE | re.DOTALL)
-    if heading_match:
-        title = _clean_catalog_title(unescape(re.sub(r"<[^>]+>", " ", heading_match.group(1))).strip())
-
-    if not title:
-        title = _clean_catalog_title(_extract_labeled_value(text, "Title"))
-
-    if not title:
-        summary_match = re.search(
-            r"The title of this book is\s+(.+?)\s+and it was written by",
-            text,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
-        if summary_match:
-            title = _clean_catalog_title(summary_match.group(1))
-
-    if not title:
-        title = _clean_catalog_title(_extract_meta_content(html_text, "property", "og:title"))
-
-    if _is_generic_catalog_title(title):
-        title = ""
-
-    author = _split_author_names(_extract_labeled_value(text, "Author"))
-    if not author:
-        summary_author_match = re.search(
-            r"it was written by\s+(.+?)(?:\.| This particular edition| This books publish date| It was published by| The 10 digit ISBN is)",
-            text,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
-        if summary_author_match:
-            author = _split_author_names(summary_author_match.group(1))
-
-    publisher = _extract_labeled_value(text, "Publisher")
-    language = _normalize_language_name(_extract_labeled_value(text, "Language"))
-    published_date = _extract_published_date(_extract_labeled_value(text, "Publish Date"))
-    if not published_date:
-        summary_date_match = re.search(
-            r"This books publish date is\s+(.+?)(?:\.| and it has| It was published by| The 10 digit ISBN is)",
-            text,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
-        if summary_date_match:
-            published_date = _extract_published_date(summary_date_match.group(1))
-
-    description = _extract_labeled_value(text, "Book Summary")
-    if _is_generic_catalog_title(title):
-        title = ""
-
-    return {
-        "title": title,
-        "author": author,
-        "publisher": publisher,
-        "language": language,
-        "published_date": published_date,
-        "description": description,
-    }
-
-
-def _lookup_find_more_books_metadata(isbn: str):
     try:
         response = requests.get(
-            f"https://www.find-more-books.com/book/isbn/{isbn}.html",
-            headers={"User-Agent": "Mozilla/5.0"},
+            "https://openlibrary.org/api/books",
+            params={"bibkeys": f"ISBN:{isbn}", "format": "json", "jscmd": "data"},
+            headers={"User-Agent": "EbookLibrary/1.0 (metadata-lookup)"},
             timeout=8,
         )
         response.raise_for_status()
-        html_text = response.text or ""
-        schema = _extract_ld_json_book(html_text)
-        page_metadata = _extract_find_more_books_page_metadata(html_text)
+        payload = response.json() or {}
+        book = payload.get(f"ISBN:{isbn}") or {}
+        if book:
+            authors = book.get("authors") or []
+            author_names = ", ".join(
+                author.get("name", "").strip()
+                for author in authors
+                if isinstance(author, dict) and author.get("name")
+            )
+            publish_date = _extract_published_date(book.get("publish_date"))
+            publishers = book.get("publishers") or []
+            publisher_name = ", ".join(
+                publisher.get("name", "").strip()
+                for publisher in publishers
+                if isinstance(publisher, dict) and publisher.get("name")
+            )
+            description = book.get("description")
+            if isinstance(description, dict):
+                description = description.get("value")
 
-        title = _clean_catalog_title(str(schema.get("name") or schema.get("headline") or "").strip())
-        author = _extract_people_names(schema.get("author"))
-        publisher = _extract_people_names(schema.get("publisher"))
-        description = str(schema.get("description") or "").strip()
-        published_date = _extract_published_date(schema.get("datePublished"))
-        language = _normalize_language_name(schema.get("inLanguage"))
-
-        if _is_generic_catalog_title(title):
-            title = ""
-        if not title:
-            title = page_metadata.get("title", "")
-        if not author:
-            author = page_metadata.get("author", "")
-        if not publisher:
-            publisher = page_metadata.get("publisher", "")
-        if not published_date:
-            published_date = page_metadata.get("published_date", "")
-        if not language:
-            language = page_metadata.get("language", "")
-        if not description or description.lower().startswith("find-more-books.com is"):
-            description = page_metadata.get("description", "")
-        if not description:
-            description = _extract_meta_content(html_text, "name", "description")
-        if not title:
-            title_match = re.search(r"<title>(.*?)</title>", html_text, flags=re.IGNORECASE | re.DOTALL)
-            if title_match:
-                title = _clean_catalog_title(unescape(re.sub(r"\s+", " ", title_match.group(1))).strip())
-        if _is_generic_catalog_title(title):
-            title = ""
-
-        if title and not author and description:
-            author_match = re.search(r"\bby\s+([^,|]+)", description, flags=re.IGNORECASE)
-            if author_match:
-                author = author_match.group(1).strip()
-
-        title = _clean_catalog_title(title)
-        if not title or _is_generic_catalog_title(title):
-            return {"found": False, "source": "find_more_books", "data": {"isbn": isbn}}
-
-        return _build_external_lookup_payload(
-            source="find_more_books",
-            isbn=isbn,
-            title=title,
-            author=author,
-            published_date=published_date,
-            language=language,
-            publisher=publisher,
-            description=description,
-        )
+            result = _build_external_lookup_payload(
+                source="openlibrary",
+                isbn=isbn,
+                title=str(book.get("title") or "").strip(),
+                author=author_names,
+                genre=_map_open_library_genre(book.get("subjects")),
+                published_date=publish_date,
+                language="",
+                publisher=publisher_name,
+                description=str(description or "").strip(),
+            )
+            if result.get("found"):
+                return result
     except Exception:
-        logger.exception("find-more-books lookup failed for ISBN %s", isbn)
-        return {"found": False, "source": "find_more_books", "data": {"isbn": isbn}}
+        logger.exception("Open Library books API lookup failed for ISBN %s", isbn)
+
+    search_result = _lookup_open_library_search_metadata(isbn)
+    if search_result.get("found"):
+        return search_result
+
+    google_result = _lookup_google_books_metadata(isbn)
+    if google_result.get("found"):
+        return google_result
+
+    return {"found": False, "source": None, "data": {"isbn": isbn}}
 
 
 def lookup_book_metadata(code: str):
@@ -571,95 +485,37 @@ def lookup_book_metadata(code: str):
         or PhysicalMaterial.objects.filter(isbn__iexact=raw).first()
     )
     if material:
-        return {
-            "found": True,
-            "source": "library",
-            "data": {
-                "title": material.title,
-                "author": material.author,
-                "isbn": material.isbn or "",
-                "category": material.category or "BOOK",
-                "genre": material.genre or "OTHER",
-                "published_date": material.published_date.isoformat() if material.published_date else "",
-                "language": material.language or "",
-                "department": material.department or "",
-                "barcode": material.barcode or "",
-                "description": material.description or "",
-                "price": str(material.price) if material.price is not None else "",
-                "total_copies": material.total_copies or 1,
-                "condition": material.condition or "GOOD",
-                "location": material.location or "STACK",
-                "can_borrow": bool(material.can_borrow),
-                "library": str(material.library_id) if material.library_id else "",
-            },
-        }
+        title = str(material.title or "").strip()
+        if _is_invalid_book_title(title):
+            material = None
+        else:
+            return {
+                "found": True,
+                "source": "library",
+                "data": {
+                    "id": str(material.id),
+                    "material_type": "physical",
+                    "title": material.title,
+                    "author": material.author,
+                    "isbn": material.isbn or "",
+                    "category": material.category or "BOOK",
+                    "genre": material.genre or "OTHER",
+                    "published_date": material.published_date.isoformat() if material.published_date else "",
+                    "language": material.language or "",
+                    "department": material.department or "",
+                    "barcode": material.barcode or "",
+                    "description": material.description or "",
+                    "price": str(material.price) if material.price is not None else "",
+                    "total_copies": material.total_copies or 1,
+                    "condition": material.condition or "GOOD",
+                    "location": material.location or "STACK",
+                    "can_borrow": bool(material.can_borrow),
+                    "library": str(material.library_id) if material.library_id else "",
+                },
+            }
 
     isbn = _normalize_isbn_digits(raw)
     if not isbn:
         return {"found": False, "source": None, "data": {}}
 
-    try:
-        response = requests.get(
-            "https://openlibrary.org/api/books",
-            params={"bibkeys": f"ISBN:{isbn}", "format": "json", "jscmd": "data"},
-            timeout=8,
-        )
-        response.raise_for_status()
-        payload = response.json() or {}
-        book = payload.get(f"ISBN:{isbn}") or {}
-        if not book:
-            search_result = _lookup_open_library_search_metadata(isbn)
-            if search_result.get("found"):
-                return search_result
-            google_result = _lookup_google_books_metadata(isbn)
-            if google_result.get("found"):
-                return google_result
-            return _lookup_find_more_books_metadata(isbn)
-
-        authors = book.get("authors") or []
-        author_names = ", ".join(
-            author.get("name", "").strip()
-            for author in authors
-            if isinstance(author, dict) and author.get("name")
-        )
-        publish_date = _extract_published_date(book.get("publish_date"))
-        publishers = book.get("publishers") or []
-        publisher_name = ", ".join(
-            publisher.get("name", "").strip()
-            for publisher in publishers
-            if isinstance(publisher, dict) and publisher.get("name")
-        )
-        description = book.get("description")
-        if isinstance(description, dict):
-            description = description.get("value")
-
-        return {
-            "found": True,
-            "source": "openlibrary",
-            "data": {
-                "title": str(book.get("title") or "").strip(),
-                "author": author_names,
-                "isbn": isbn,
-                "category": "BOOK",
-                "genre": _map_open_library_genre(book.get("subjects")),
-                "published_date": publish_date,
-                "language": "",
-                "department": "",
-                "barcode": "",
-                "publisher": publisher_name,
-                "description": str(description or "").strip(),
-                "total_copies": 1,
-                "condition": "NEW",
-                "location": "STACK",
-                "can_borrow": True,
-            },
-        }
-    except Exception:
-        logger.exception("Open Library lookup failed for ISBN %s", isbn)
-        search_result = _lookup_open_library_search_metadata(isbn)
-        if search_result.get("found"):
-            return search_result
-        google_result = _lookup_google_books_metadata(isbn)
-        if google_result.get("found"):
-            return google_result
-        return _lookup_find_more_books_metadata(isbn)
+    return _lookup_external_isbn_metadata(isbn)

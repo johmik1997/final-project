@@ -114,24 +114,31 @@
               placeholder="Search by title, author, ISBN, or barcode..."
               class="search-input"
             />
-            <button
-              type="button"
-              class="scan-btn"
-              :class="{ active: showBarcodeScanner }"
-              title="Scan barcode"
-              @click="showBarcodeScanner = !showBarcodeScanner"
-            >
-              <BaseIcon :path="mdiBarcode" size="18" />
-            </button>
             <button v-if="searchQuery" type="button" @click="clearSearch" class="clear-btn">
               <BaseIcon :path="mdiClose" size="16" />
             </button>
           </div>
-          <BarcodeScanner
-            v-if="showBarcodeScanner && activeType === 'physical'"
-            :active="showBarcodeScanner"
-            @scan="handleBarcodeScan"
-          />
+
+          <div v-if="activeType === 'physical'" class="scan-panel">
+            <div class="scan-actions-row">
+              <button
+                type="button"
+                class="scan-toggle-btn"
+                :class="{ active: showBarcodeScanner }"
+                @click="showBarcodeScanner = !showBarcodeScanner"
+              >
+                <BaseIcon :path="mdiBarcode" size="18" />
+                {{ showBarcodeScanner ? 'Hide scanner' : 'Scan ISBN / barcode' }}
+              </button>
+            </div>
+            <p v-if="barcodeScanPending" class="scan-status">Searching for scanned barcode…</p>
+            <BarcodeScanner
+              v-if="showBarcodeScanner"
+              :active="showBarcodeScanner"
+              :allow-image-upload="false"
+              @scan="handleBarcodeScan"
+            />
+          </div>
 
           <div class="filter-selects">
             <select v-model="selectedCategory" class="filter-select">
@@ -385,7 +392,7 @@ import { useRouter } from 'vue-router'
 import Table from '@/components/Table.vue'
 import { useMaterials } from '../store/materialStore'
 import { useApiRequest } from '@/composables/useApiRequest'
-import { getAllMaterials, removeMaterialById } from '../api/materialApi'
+import { getAllMaterials, lookupMaterialBarcode, removeMaterialById } from '../api/materialApi'
 import { normalizeRoleValue } from '@/utils/authNavigation'
 import { toasted } from '@/utils/utils'
 import { openModal } from '@customizer/modal-x'
@@ -419,6 +426,7 @@ const viewMode = ref('grid')
 const selectedCategory = ref('')
 const selectedCondition = ref('')
 const showBarcodeScanner = ref(false)
+const barcodeScanPending = ref(false)
 
 const showImportModal = ref(false)
 const selectedFile = ref(null)
@@ -594,11 +602,40 @@ const isDigital = computed(() => activeType.value === 'digital')
 
 const canManageMaterial = computed(() => !['MEMBER', 'STACK STAFF', 'FRONT DESK STAFF'].includes(userRole.value))
 
-function handleBarcodeScan(code) {
+async function handleBarcodeScan(code) {
   const normalized = String(code || '').trim()
   if (!normalized) return
-  searchQuery.value = normalized
+
   showBarcodeScanner.value = false
+  barcodeScanPending.value = true
+  try {
+    const res = await lookupMaterialBarcode(normalized)
+    const payload = res?.data || res
+    const match = payload?.data || {}
+
+    if (payload?.found && payload?.source === 'library' && match?.id) {
+      barcodeScanPending.value = false
+      toasted(true, `Found ${match?.title || 'material'} from barcode`)
+      router.push({
+        path: `/material/${match.id}`,
+        query: { type: match?.material_type || 'physical' },
+      })
+      return
+    }
+
+    searchQuery.value = normalized
+    toasted(
+      true,
+      payload?.found
+        ? `Barcode matched metadata for ${match?.title || normalized}`
+        : `Searching materials for ${normalized}`
+    )
+  } catch {
+    searchQuery.value = normalized
+    toasted(false, '', 'Could not look up that barcode. Showing search results instead.')
+  } finally {
+    barcodeScanPending.value = false
+  }
 }
 
 watch(activeType, () => {
@@ -1055,6 +1092,7 @@ function remove(id) {
 .filters-grid {
   display: flex;
   flex-direction: column;
+  flex-wrap: wrap;
   gap: 1rem;
 }
 
@@ -1080,7 +1118,7 @@ function remove(id) {
 
 .search-input {
   width: 100%;
-  padding: 0.625rem 5.25rem 0.625rem 2.25rem;
+  padding: 0.625rem 2.5rem 0.625rem 2.25rem;
   box-sizing: border-box;
   border-radius: 0.75rem;
   border: 1px solid rgba(203, 213, 225, 0.5);
@@ -1130,6 +1168,49 @@ function remove(id) {
   background: rgba(30, 41, 59, 0.9);
   border-color: rgba(51, 65, 85, 0.6);
   color: #cbd5e1;
+}
+
+.scan-panel {
+  width: 100%;
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border-radius: 0.85rem;
+  border: 1px dashed rgba(245, 158, 11, 0.45);
+  background: rgba(255, 251, 235, 0.9);
+}
+
+.scan-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.scan-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.08);
+  color: #b45309;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.scan-toggle-btn.active {
+  background: rgba(245, 158, 11, 0.18);
+}
+
+.scan-status {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #b45309;
 }
 
 .clear-btn {

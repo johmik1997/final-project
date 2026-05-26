@@ -15,7 +15,7 @@ console.log(authStore.auth?.user?.role);
   <div>
     <Form class="space-y-6" id="ProfileForm" :inner="false">
       <div
-        class="border border-base-clr/20 grid grid-cols-2 gap-6 rounded-md p-5"
+        class="border border-base-clr/20 dark:border-slate-600 grid grid-cols-1 sm:grid-cols-2 gap-6 rounded-md p-5 bg-gray-50/50 dark:bg-slate-900/40"
       >
       <Input
           label="ID Number"

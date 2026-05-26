@@ -5,7 +5,7 @@ PHYSICAL_MATERIAL_CACHE_NAMESPACE = "materials:physical"
 DIGITAL_MATERIAL_CACHE_NAMESPACE = "materials:digital"
 MATERIAL_INTERACTION_CACHE_NAMESPACE = "materials:interactions"
 MATERIAL_FEEDBACK_CACHE_NAMESPACE = "materials:feedback"
-MATERIAL_LOOKUP_CACHE_NAMESPACE = "materials:lookup:v3"
+MATERIAL_LOOKUP_CACHE_NAMESPACE = "materials:lookup:v4"
 LIBRARY_CACHE_NAMESPACE = "libraries:read"
 
 
