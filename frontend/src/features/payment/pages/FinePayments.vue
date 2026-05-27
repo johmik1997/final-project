@@ -141,7 +141,7 @@ function verifyPayment(txRef) {
       loadReturns();
 
       if (status === 'COMPLETED') {
-        toasted(true, 'Payment verified successfully');
+        toasted(true, 'Payment complete. Your return is now finalized.');
       } else {
         toasted(false, 'Payment was not completed', `Current status: ${status || 'FAILED'}`);
       }

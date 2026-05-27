@@ -46,6 +46,22 @@ export function removeMaterialById(id, type = "physical") {
   return api.addAuthenticationHeader().delete(`${path}/${id}/`);
 }
 
+function getApiBase() {
+  return (import.meta.env.VITE_API_URL || import.meta.env.v_API_URL || '').replace(/\/+$/, '');
+}
+
+export function streamDigitalMaterial(id) {
+  return `${getApiBase()}/material/digital-materials/${id}/stream/`;
+}
+
+export function downloadDigitalMaterial(id) {
+  return `${getApiBase()}/material/digital-materials/${id}/download/`;
+}
+
+export function getDigitalMaterialAccessLogs(id) {
+  return api.addAuthenticationHeader().get(`/material/digital-materials/${id}/access-logs/`);
+}
+
 export function generateMaterialDescription(payload = {}) {
   return api.addAuthenticationHeader().post("/material/generate-description/", payload);
 }

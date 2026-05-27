@@ -88,9 +88,9 @@
                   <BaseIcon :path="mdiFilePdfBox" size="16" />
                   Read PDF
                 </button>
-                <button class="btn-secondary" :disabled="!hasDigitalFile" @click="openDigitalFile">
-                  <BaseIcon :path="mdiOpenInNew" size="16" />
-                  Open file
+                <button v-if="material?.allow_downloadable" class="btn-secondary" :disabled="!hasDigitalFile" @click="downloadDigitalFile">
+                  <BaseIcon :path="mdiDownload" size="16" />
+                  Download file
                 </button>
               </template>
             </div>
@@ -334,12 +334,12 @@ import {
   mdiBookmark,
   mdiCalendarClock,
   mdiCommentTextOutline,
+  mdiDownload,
   mdiFilePdfBox,
   mdiHeartOutline,
   mdiHeart,
   mdiLockClock,
   mdiMapMarkerOutline,
-  mdiOpenInNew,
   mdiPackageVariantClosed,
   mdiPrinter,
   mdiSchoolOutline,
@@ -720,9 +720,25 @@ function goToReadMaterial() {
   });
 }
 
-function openDigitalFile() {
-  if (!digitalFileUrl.value) return;
-  window.open(digitalFileUrl.value, '_blank', 'noopener');
+function downloadDigitalFile() {
+  if (!material.value?.allow_downloadable) { toasted(false, 'Download is not permitted for this material.'); return; }
+  import('../api/materialApi').then(({ downloadDigitalMaterial }) => {
+    const token = (() => {
+      try { const d = JSON.parse(localStorage.getItem('userDetail') || '{}'); return d?.access || d?.accessToken || d?.token || ''; } catch { return ''; }
+    })();
+    fetch(downloadDigitalMaterial(String(materialIdentity.value)), {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    }).then(async res => {
+      if (!res.ok) throw new Error(`${res.status}`);
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = material.value?.title || 'download';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toasted(true, 'Download started');
+    }).catch(() => toasted(false, 'Download failed.'));
+  });
 }
 
 function generateAiDescription() {

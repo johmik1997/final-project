@@ -120,6 +120,12 @@ function update({ values }) {
   payload.set('published_date', toDateInputValue(values.published_date));
   payload.set('total_copies', Number(values.total_copies || 0));
   payload.set('price', Number(values.price || 0));
+  const allowDownload =
+    values.allow_downloadable === true ||
+    values.allow_downloadable === 'true' ||
+    values.allow_downloadable === 'on' ||
+    values.allow_downloadable === 'YES';
+  payload.set('allow_downloadable', allowDownload ? 'true' : 'false');
   const imageInput = document.querySelector('input[name="image"]');
   const imageFile = imageInput?.files?.[0] || null;
   if (imageFile) {

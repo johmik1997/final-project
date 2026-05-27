@@ -2,6 +2,7 @@
 import Form from '@/components/new_form_builder/Form.vue';
 import Input from '@/components/new_form_elements/Input.vue';
 import Select from '@/components/new_form_elements/Select.vue';
+import { computed } from 'vue';
 
 const props = defineProps({
   initialData: {
@@ -12,6 +13,16 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+});
+
+const isDigital = computed(() => {
+  const t = String(props.initialData?.material_type || '').toLowerCase();
+  return t === 'digital';
+});
+
+const allowDownloadable = computed(() => {
+  const v = props.initialData?.allow_downloadable;
+  return v === true || v === 'true' || v === 'YES';
 });
 const departments = [
   'Biology',
@@ -105,6 +116,23 @@ function toDateInputValue(value) {
     <Input name="total_copies" type="number" label="Total Copies" validation="required|numeric" :value="initialData?.total_copies ?? ''" />
     <Input name="price" type="number" label="Price" :value="initialData?.price ?? ''" :attributes="{ step: '0.01' }" />
     <Input name="image" type="file" label="Material Image (Optional)" :attributes="{ accept: '.jpg,.jpeg,.png,.webp,.gif' }" />
+
+    <template v-if="isDigital">
+      <div class="col-span-full flex items-center gap-2 mt-1">
+        <input
+          type="checkbox"
+          name="allow_downloadable"
+          id="allow_downloadable_edit"
+          :checked="allowDownloadable"
+          value="true"
+          class="w-4 h-4 accent-amber-500"
+        />
+        <label for="allow_downloadable_edit" class="text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
+          Allow members to download this file
+        </label>
+      </div>
+      <p class="col-span-full text-xs text-slate-500">When unchecked, members can read online only.</p>
+    </template>
 
     <Select
       name="condition"

@@ -233,7 +233,8 @@ async function lookupScannedMaterial(rawCode, options = {}) {
         source: payload.source,
       });
       updateLookupPreview(payload.data, payload.source);
-      toasted(true, `Book details loaded from ${formatLookupSourceLabel(payload.source)}`);
+      const sourceLabel = formatLookupSourceLabel(payload.source);
+      toasted(true, `Loaded title, author, and details from ${sourceLabel}`);
       return;
     }
 
@@ -252,8 +253,13 @@ async function handleBarcodeScan(code) {
   const scanned = String(code || '').trim();
   if (!scanned) return;
   syncScannedCode(scanned);
-  await lookupScannedMaterial(scanned, { silentNotFound: false });
   showBarcodeScanner.value = false;
+  const digitsOnly = scanned.replace(/\D/g, '');
+  const lookupCode =
+    digitsOnly.length === 10 || digitsOnly.length === 13
+      ? digitsOnly
+      : digitsOnly.match(/97[89]\d{10}/)?.[0] || scanned;
+  await lookupScannedMaterial(lookupCode, { silentNotFound: false });
 }
 
 function searchCurrentCode() {
@@ -326,6 +332,12 @@ function handleCreate({ values }) {
     payload.append('language', values.language || '');
     payload.append('isbn', values.isbn || '');
     payload.append('description', values.description || '');
+    const allowDownload =
+      values.allow_downloadable === true ||
+      values.allow_downloadable === 'YES' ||
+      values.allow_downloadable === 'true' ||
+      values.allow_downloadable === 'on';
+    payload.append('allow_downloadable', allowDownload ? 'true' : 'false');
     if (values.library) {
       payload.append('library', values.library);
     }
@@ -611,6 +623,17 @@ function validateAndNext() {
                 label="Custom Cover Image (Optional)"
               />
               <p class="file-hint">Accepted formats: PDF, DOC, DOCX, EPUB, TXT, PPT, PPTX</p>
+              <label class="downloadable-toggle">
+                <input
+                  type="checkbox"
+                  name="allow_downloadable"
+                  value="YES"
+                  checked
+                  class="downloadable-checkbox"
+                />
+                <span>Allow members to download this file</span>
+              </label>
+              <p class="file-hint">When unchecked, members can read online only.</p>
             </div>
             
             <div v-else class="form-grid">
@@ -1061,6 +1084,27 @@ function validateAndNext() {
     grid-template-columns: repeat(2, 1fr);
     gap: 1.5rem;
   }
+}
+
+.downloadable-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-top: 0.25rem;
+  font-size: 0.9rem;
+  color: #334155;
+  cursor: pointer;
+}
+
+.dark .downloadable-toggle {
+  color: #e2e8f0;
+}
+
+.downloadable-checkbox {
+  margin-top: 0.2rem;
+  width: 1rem;
+  height: 1rem;
+  accent-color: #f59e0b;
 }
 
 .digital-upload {

@@ -5,11 +5,11 @@ import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 const props = defineProps({
   active: { type: Boolean, default: false },
   /** Minimum ms between duplicate scan emissions */
-  scanCooldownMs: { type: Number, default: 2500 },
+  scanCooldownMs: { type: Number, default: 1200 },
   /** Same code must be read this many times before emitting */
-  minStableReads: { type: Number, default: 4 },
+  minStableReads: { type: Number, default: 2 },
   /** Minimum time the same code must stay visible (ms) */
-  stabilityMs: { type: Number, default: 900 },
+  stabilityMs: { type: Number, default: 350 },
   /** Stop the camera after a confirmed scan */
   autoStop: { type: Boolean, default: true },
   allowImageUpload: { type: Boolean, default: false },
@@ -46,9 +46,18 @@ function normalizeScannedCode(raw) {
   if (!text) return '';
 
   const digitsOnly = text.replace(/\D/g, '');
-  // ISBN-13 / ISBN-10 style barcodes
   if (digitsOnly.length === 10 || digitsOnly.length === 13) {
     return digitsOnly;
+  }
+  const isbnMatch = digitsOnly.match(/97[89]\d{10}/);
+  if (isbnMatch) {
+    return isbnMatch[0];
+  }
+  if (digitsOnly.length > 13) {
+    const tail = digitsOnly.slice(-13);
+    if (tail.startsWith('978') || tail.startsWith('979')) {
+      return tail;
+    }
   }
   return text;
 }
@@ -104,8 +113,9 @@ function processDecodedText(raw) {
 }
 
 function getScanBoxSize() {
-  const width = Math.min(Math.max(window.innerWidth * 0.85, 280), 420);
-  const height = Math.min(Math.max(width * 0.45, 100), 180);
+  const viewportWidth = Math.min(window.innerWidth, 720);
+  const width = Math.min(Math.max(viewportWidth * 0.94, 320), 520);
+  const height = Math.min(Math.max(width * 0.55, 140), 300);
   return { width: Math.round(width), height: Math.round(height) };
 }
 
@@ -142,7 +152,7 @@ async function startScanner() {
     await reader.start(
       { facingMode: props.captureMode },
       {
-        fps: 10,
+        fps: 20,
         qrbox: scanBox,
         aspectRatio: 1.777,
         disableFlip: false,
@@ -195,10 +205,10 @@ onBeforeUnmount(() => {
     <p v-if="isStarting" class="scanner-hint">Starting camera...</p>
     <p v-else-if="scannerError" class="scanner-error">{{ scannerError }}</p>
     <p v-else-if="scanStatus === 'tracking'" class="scanner-hint scanner-hint-tracking">
-      Hold the barcode steady in the frame…
+      Hold steady…
     </p>
     <p v-else-if="scanStatus === 'ready'" class="scanner-hint scanner-hint-ready">Barcode confirmed</p>
-    <p v-else class="scanner-hint">Align the barcode inside the frame and hold steady for a moment</p>
+    <p v-else class="scanner-hint">Center the ISBN barcode in the frame</p>
   </div>
 </template>
 
@@ -211,9 +221,14 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+.dark .barcode-scanner {
+  background: rgba(30, 41, 59, 0.5);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
 .scanner-viewport {
   width: 100%;
-  min-height: 220px;
+  min-height: 300px;
   border-radius: 0.65rem;
   overflow: hidden;
   background: #0f172a;
@@ -228,6 +243,10 @@ onBeforeUnmount(() => {
   font-size: 0.8rem;
   color: #92400e;
   text-align: center;
+}
+
+.dark .scanner-hint {
+  color: #fcd34d;
 }
 
 .scanner-hint-tracking {
