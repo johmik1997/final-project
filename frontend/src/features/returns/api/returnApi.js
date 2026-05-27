@@ -12,4 +12,3 @@ export function getAllReturns(query = {}) {
 export function createReturn(data) {
   return api.addAuthenticationHeader().post(`${path}/`, data);
 }
-

@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { openModal } from '@customizer/modal-x';
 import BaseIcon from '@/components/base/BaseIcon.vue';
 import Table from '@/components/Table.vue';
 import { useApiRequest } from '@/composables/useApiRequest';
@@ -17,6 +16,7 @@ import {
   mdiKeyboardReturn,
   mdiMagnify,
   mdiRefresh,
+  mdiClose,
 } from '@mdi/js';
 
 const router = useRouter();
@@ -27,6 +27,18 @@ const paymentReq = useApiRequest();
 const verifyReq = useApiRequest();
 const searchQuery = ref('');
 let unsubscribeEntitySync = () => {};
+
+// Condition modal state
+const showConditionModal = ref(false);
+const selectedCondition = ref('GOOD');
+const pendingReturnRow = ref(null);
+
+const CONDITIONS = [
+  { value: 'GOOD', label: 'Good', description: 'No damage, no fine', color: 'text-emerald-600' },
+  { value: 'FAIR', label: 'Fair', description: 'Minor wear', color: 'text-yellow-600' },
+  { value: 'DAMAGED', label: 'Damaged', description: 'Significant damage', color: 'text-orange-600' },
+  { value: 'LOST', label: 'Lost', description: 'Material not returned', color: 'text-rose-600' },
+];
 
 function rowsFromPayload(payload) {
   if (!payload) return [];
@@ -104,6 +116,20 @@ const stats = computed(() => ({
   pendingFineTotal: pendingSettlementRows.value.reduce((sum, row) => sum + amount(row?.fine_amount), 0),
 }));
 
+// Fine preview calculation (client-side estimate shown in modal)
+const estimatedOverdueFine = computed(() => {
+  if (!pendingReturnRow.value) return 0;
+  return amount(pendingReturnRow.value?.estimated_fine_amount);
+});
+
+const conditionFineNote = computed(() => {
+  const cond = selectedCondition.value;
+  if (cond === 'GOOD' || cond === 'NEW') return null;
+  const price = amount(pendingReturnRow.value?.material_price);
+  if (!price) return `Condition fine will be calculated based on material price × policy %.`;
+  return null;
+});
+
 function getReturnUrl() {
   return `${window.location.origin}/returns`;
 }
@@ -115,41 +141,53 @@ function openPayments(returnId = null) {
   });
 }
 
-function recordReturn(row) {
-  const isOverdue = normalizeStatus(row?.status) === 'OVERDUE';
-  const title = isOverdue ? 'Create Fine Settlement' : 'Complete Return';
-  const message = isOverdue
-    ? `This borrow is overdue. Create the fine settlement for "${row?.material_title || 'this material'}" so payment can be completed before the return is finalized?`
-    : `Complete the return for "${row?.material_title || 'this material'}"?`;
+function openConditionModal(row) {
+  pendingReturnRow.value = row;
+  selectedCondition.value = 'GOOD';
+  showConditionModal.value = true;
+}
 
-  openModal(
-    'Confirmation',
-    { title, message },
-    (confirmed) => {
-      if (!confirmed) return;
+function closeConditionModal() {
+  showConditionModal.value = false;
+  pendingReturnRow.value = null;
+  selectedCondition.value = 'GOOD';
+}
 
-      createReq.send(
-        () => createReturn({ borrow: row?.id }),
-        (res) => {
-          if (!res?.success) {
-            toasted(false, 'Failed to process return', res?.error || 'Unknown error');
-            return;
-          }
+function confirmReturn() {
+  const row = pendingReturnRow.value;
+  if (!row) return;
 
-          const fineAmount = amount(res?.data?.fine_amount);
-          emitEntityMutation('returns', { action: 'created', id: res?.data?.id });
+  closeConditionModal();
 
-          if (fineAmount > 0) {
-            toasted(true, `Fine settlement created. ETB ${fineAmount.toFixed(2)} must be paid before the return closes.`);
-            openPayments(res?.data?.id);
-          } else {
-            emitEntityMutation('borrows', { action: 'updated', id: row?.id, status: 'RETURNED' });
-            toasted(true, 'Return recorded successfully');
-          }
+  createReq.send(
+    () => createReturn({ borrow: row?.id, material_condition: selectedCondition.value }),
+    (res) => {
+      if (!res?.success) {
+        toasted(false, 'Failed to process return', res?.error || 'Unknown error');
+        return;
+      }
 
-          loadPage();
-        }
-      );
+      const data = res?.data;
+      const overdueFine = amount(data?.overdue_fine);
+      const conditionFine = amount(data?.condition_fine);
+      const totalFine = amount(data?.fine_amount);
+
+      emitEntityMutation('returns', { action: 'created', id: data?.id });
+
+      if (totalFine > 0) {
+        const breakdown = [
+          `Overdue Fine: ETB ${overdueFine.toFixed(2)}`,
+          `Condition Fine (${data?.material_condition}): ETB ${conditionFine.toFixed(2)}`,
+          `Total Fine: ETB ${totalFine.toFixed(2)}`,
+        ].join(' | ');
+        toasted(true, `Fine settlement created. ${breakdown}`);
+        openPayments(data?.id);
+      } else {
+        emitEntityMutation('borrows', { action: 'updated', id: row?.id, status: 'RETURNED' });
+        toasted(true, 'Return recorded successfully');
+      }
+
+      loadPage();
     }
   );
 }
@@ -225,39 +263,28 @@ onBeforeUnmount(() => {
 <template>
   <div class="space-y-6 p-4 sm:p-7 dark:bg-slate-950">
     <!-- Hero Section -->
-<section class="rounded-[28px] border border-slate-200 dark:border-slate-800 bg-[linear-gradient(135deg,_rgba(245,158,11,0.15),_rgba(239,68,68,0.1))] p-6 shadow-xl">
-
-  <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-    
-    <div class="max-w-2xl">
-      
-      <!-- Small Top Text -->
-      <p class="text-xs font-semibold uppercase tracking-[0.32em] text-slate-500 dark:text-slate-400">
-        Circulation Desk
-      </p>
-
-      <!-- Title -->
-      <h1 class="mt-3 text-3xl font-bold tracking-tight bg-gradient-to-r from-amber-500 to-yellow-400 bg-clip-text text-transparent">
-        Process returns without losing the payment workflow.
-      </h1>
-
-      <!-- Description -->
-      <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">
-        Regular returns can close immediately. Overdue borrows create a fine settlement first, and the return only finishes after payment verification.
-      </p>
-    </div>
-
-    <!-- Refresh Button -->
-    <button
-      class="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-600 shadow-md"
-      @click="loadPage"
-    >
-      <BaseIcon :path="mdiRefresh" size="18" />
-      Refresh
-    </button>
-
-  </div>
-</section>
+    <section class="rounded-[28px] border border-slate-200 dark:border-slate-800 bg-[linear-gradient(135deg,_rgba(245,158,11,0.15),_rgba(239,68,68,0.1))] p-6 shadow-xl">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div class="max-w-2xl">
+          <p class="text-xs font-semibold uppercase tracking-[0.32em] text-slate-500 dark:text-slate-400">
+            Circulation Desk
+          </p>
+          <h1 class="mt-3 text-3xl font-bold tracking-tight bg-gradient-to-r from-amber-500 to-yellow-400 bg-clip-text text-transparent">
+            Process returns without losing the payment workflow.
+          </h1>
+          <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">
+            Select the material condition on return. Condition fines are added to any overdue fine and must be paid before the return closes.
+          </p>
+        </div>
+        <button
+          class="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-600 shadow-md"
+          @click="loadPage"
+        >
+          <BaseIcon :path="mdiRefresh" size="18" />
+          Refresh
+        </button>
+      </div>
+    </section>
 
     <!-- Stats Cards -->
     <section class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -315,7 +342,7 @@ onBeforeUnmount(() => {
       <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 class="text-xl font-semibold text-slate-900 dark:text-white">Return queue</h2>
-          <p class="text-sm text-slate-500 dark:text-slate-400">Overdue rows create settlement records instead of instantly closing the return.</p>
+          <p class="text-sm text-slate-500 dark:text-slate-400">Select material condition on return. Condition fines are calculated from the Library Policy.</p>
         </div>
 
         <div class="relative w-full max-w-xl">
@@ -358,7 +385,7 @@ onBeforeUnmount(() => {
                 v-else
                 class="inline-flex items-center gap-1 rounded-full bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
                 :disabled="createReq.pending.value"
-                @click="recordReturn(row)"
+                @click="openConditionModal(row)"
               >
                 <BaseIcon :path="mdiKeyboardReturn" size="14" />
                 {{ actionLabel(row) }}
@@ -374,52 +401,100 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <!-- Outstanding Fine Settlements Section -->
-    <!-- <section class="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm">
-      <div class="flex flex-col gap-2">
-        <h2 class="text-xl font-semibold text-slate-900 dark:text-white">Outstanding fine settlements</h2>
-        <p class="text-sm text-slate-500 dark:text-slate-400">These returns stay incomplete until the overdue payment is verified.</p>
-      </div>
+    <!-- Condition & Fine Modal -->
+    <Teleport to="body">
+      <div
+        v-if="showConditionModal"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+        @click.self="closeConditionModal"
+      >
+        <div class="w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+          <!-- Modal Header -->
+          <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800">
+            <div>
+              <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Process Return</h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate max-w-xs">
+                {{ pendingReturnRow?.material_title || 'Material' }} — {{ pendingReturnRow?.member_name || 'Member' }}
+              </p>
+            </div>
+            <button
+              class="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              @click="closeConditionModal"
+            >
+              <BaseIcon :path="mdiClose" size="18" />
+            </button>
+          </div>
 
-      <div class="mt-6">
-        <Table
-          :pending="returnReq.pending.value || paymentReq.pending.value || verifyReq.pending.value"
-          :rows="pendingSettlementRows"
-          :show-pagination="false"
-          :headers="{
-            head: ['Material', 'Member', 'Return Created', 'Fine Amount', 'Payment Status', 'Actions'],
-            row: ['material_title', 'member_name', 'return_date', 'fine_amount', 'payment_status'],
-          }"
-          :cells="{
-            return_date: (val) => secondDateFormatWithTime(val) || '-',
-            fine_amount: (val) => `ETB ${amount(val).toFixed(2)}`,
-          }"
-        >
-          <template #actions="{ row }">
-            <div class="flex flex-wrap items-center justify-end gap-2">
+          <!-- Condition Selector -->
+          <div class="px-6 py-5 space-y-3">
+            <p class="text-sm font-medium text-slate-700 dark:text-slate-300">Select returned material condition:</p>
+            <div class="grid grid-cols-2 gap-2">
               <button
-                v-if="row?.payment_reference && row?.payment_status === 'PENDING'"
-                class="rounded-full border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/50 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-400 transition hover:bg-amber-100 dark:hover:bg-amber-900/50"
-                @click="verifyPayment(row?.payment_reference)"
+                v-for="cond in CONDITIONS"
+                :key="cond.value"
+                class="rounded-2xl border-2 px-4 py-3 text-left transition"
+                :class="selectedCondition === cond.value
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40'
+                  : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600'"
+                @click="selectedCondition = cond.value"
               >
-                Verify
-              </button>
-              <button
-                class="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
-                :disabled="paymentReq.pending.value"
-                @click="startPayment(row)"
-              >
-                Pay now
+                <span class="block text-sm font-semibold" :class="cond.color">{{ cond.label }}</span>
+                <span class="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">{{ cond.description }}</span>
               </button>
             </div>
-          </template>
-          <template #placeholder>
-            <div class="rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-8 text-center text-sm text-slate-500 dark:text-slate-400">
-              No overdue settlements are waiting for payment.
+
+            <!-- Fine Breakdown -->
+            <div class="mt-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 space-y-2">
+              <p class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Fine Breakdown</p>
+
+              <div class="flex justify-between text-sm text-slate-700 dark:text-slate-300">
+                <span>Overdue Fine</span>
+                <span class="font-medium">ETB {{ estimatedOverdueFine.toFixed(2) }}</span>
+              </div>
+
+              <div class="flex justify-between text-sm text-slate-700 dark:text-slate-300">
+                <span>Condition Fine</span>
+                <span class="font-medium text-slate-400 dark:text-slate-500 italic text-xs">
+                  {{ selectedCondition === 'GOOD' || selectedCondition === 'NEW' ? 'ETB 0.00' : 'Calculated by server (price × policy %)' }}
+                </span>
+              </div>
+
+              <div class="border-t border-slate-200 dark:border-slate-700 pt-2 flex justify-between text-sm font-semibold text-slate-900 dark:text-white">
+                <span>Total Fine</span>
+                <span>
+                  {{ selectedCondition === 'GOOD' || selectedCondition === 'NEW'
+                    ? `ETB ${estimatedOverdueFine.toFixed(2)}`
+                    : `ETB ${estimatedOverdueFine.toFixed(2)} + condition fine` }}
+                </span>
+              </div>
+
+              <p v-if="selectedCondition === 'LOST'" class="text-xs text-rose-600 dark:text-rose-400 mt-1">
+                ⚠ LOST: Future borrowing will be disabled for this material until the fine is paid.
+              </p>
+              <p v-else-if="selectedCondition !== 'GOOD' && selectedCondition !== 'NEW'" class="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                Exact condition fine will be confirmed after submission based on material price and policy percentage.
+              </p>
             </div>
-          </template>
-        </Table>
+          </div>
+
+          <!-- Modal Actions -->
+          <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100 dark:border-slate-800">
+            <button
+              class="rounded-full border border-slate-200 dark:border-slate-700 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+              @click="closeConditionModal"
+            >
+              Cancel
+            </button>
+            <button
+              class="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
+              :disabled="createReq.pending.value"
+              @click="confirmReturn"
+            >
+              Confirm Return
+            </button>
+          </div>
+        </div>
       </div>
-    </section> -->
+    </Teleport>
   </div>
 </template>

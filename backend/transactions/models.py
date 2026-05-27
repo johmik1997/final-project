@@ -31,7 +31,7 @@ class Reservation(models.Model):
 
     def __str__(self):
         return f"{self.member} reserved {self.material_id}"
-    
+
 
 # Borrow Table
 class Borrow(models.Model):
@@ -63,7 +63,7 @@ class Borrow(models.Model):
         ("OVERDUE", "OVERDUE"),
         ("RETURNED", "RETURNED"),
     ]
-    # ovrrdue_amount = 
+    # ovrrdue_amount =
     status = models.CharField(max_length=20, choices=STATUS, default="BORROWED")
     overdue_notified_at = models.DateTimeField(null=True, blank=True)
 
@@ -120,6 +120,7 @@ class Return(models.Model):
         ("GOOD", "GOOD"),
         ("FAIR", "FAIR"),
         ("DAMAGED", "DAMAGED"),
+        ("LOST", "LOST"),
     ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     borrow = models.ForeignKey(
@@ -128,10 +129,19 @@ class Return(models.Model):
         related_name="returns"
     )
     return_date = models.DateTimeField(auto_now_add=True)
+    overdue_fine = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0,
+        help_text="Fine calculated from overdue days × daily rate"
+    )
+    condition_fine = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0,
+        help_text="Fine calculated from material price × condition penalty %"
+    )
     fine_amount = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        default=0
+        default=0,
+        help_text="Total fine = overdue_fine + condition_fine"
     )
     material_condition = models.CharField(max_length=20, choices=CONDITION, default="GOOD")
     created_by = models.ForeignKey(
