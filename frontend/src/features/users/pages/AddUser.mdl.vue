@@ -91,7 +91,7 @@ function create({ values }) {
       <Form :inner="false" id="addform"
         class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4 sm:p-6">
         
-        <Input name="id_number" validation="required|numeric" label="ID Number" :attributes="{ placeholder: 'Enter ID Number'}" />
+        <Input name="id_number" validation="required" label="ID Number" :attributes="{ placeholder: 'Enter ID Number'}" />
 
         <Input name="email" validation="required|email" label="Email" :attributes="{ placeholder: 'Enter User Email' }" />
         

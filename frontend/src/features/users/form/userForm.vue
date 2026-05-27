@@ -78,7 +78,7 @@ watch(
 
     <Input
       name="id_number"
-      validation="required|numeric"
+      validation="required"
       label="ID Number"
       :value="user?.id_number || ''"
       :attributes="{ placeholder: 'Enter ID Number' }"
