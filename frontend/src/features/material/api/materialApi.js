@@ -38,7 +38,8 @@ export function getMaterialById(id, type = "physical") {
 
 export function updateMaterialById(id, data, type = "physical") {
   const path = resolvePath(type);
-  return api.addAuthenticationHeader().put(`${path}/${id}/`, data);
+  const method = String(type || "physical").toLowerCase() === "digital" ? "patch" : "put";
+  return api.addAuthenticationHeader()[method](`${path}/${id}/`, data);
 }
 
 export function removeMaterialById(id, type = "physical") {
