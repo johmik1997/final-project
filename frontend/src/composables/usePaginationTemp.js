@@ -70,7 +70,6 @@ export function usePaginations(options = {}) {
     return normalizeQuery(
       JSON.parse(
         JSON.stringify({
-          searchKey: search.value || undefined,
           search: search.value || undefined,
           page: targetPage,
           size: Number(perPage.value) || Number(activePagination.limit.value) || 5,
