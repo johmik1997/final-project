@@ -126,18 +126,25 @@ function update({ values }) {
   payload.set('allow_downloadable', allowDownload ? 'true' : 'false');
   const imageInput = document.querySelector('input[name="image"]');
   const imageFile = imageInput?.files?.[0] || null;
-  if (imageFile) {
-    payload.set('image', imageFile, imageFile.name);
-  }
 
   if (materialType.value === 'physical') {
     payload.set('total_copies', Number(values.total_copies || 0));
     payload.set('price', Number(values.price || 0));
+    if (imageFile) {
+      payload.set('image', imageFile, imageFile.name);
+    }
   } else {
+    const coverImageInput = document.querySelector('input[name="cover_image"]');
+    const coverImageFile = coverImageInput?.files?.[0] || null;
+    if (coverImageFile) {
+      payload.set('cover_image', coverImageFile, coverImageFile.name);
+    }
     payload.delete('total_copies');
     payload.delete('price');
+    payload.delete('location');
     payload.delete('condition');
     payload.delete('can_borrow');
+    payload.delete('image');
   }
 
   updateReq.send(

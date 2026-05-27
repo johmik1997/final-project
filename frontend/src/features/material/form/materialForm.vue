@@ -102,7 +102,12 @@ function toDateInputValue(value) {
       :options="departments"
       :attributes="{ placeholder: 'Select Department' }"
     />
-    <Input name="location" label="Library Location" :value="initialData?.location || ''" />
+    <Input
+      v-if="isPhysical"
+      name="location"
+      label="Library Location"
+      :value="initialData?.location || ''"
+    />
 
     <Select
       :obj="true"
@@ -130,9 +135,21 @@ function toDateInputValue(value) {
       :value="initialData?.price ?? ''"
       :attributes="{ step: '0.01' }"
     />
-    <Input name="image" type="file" label="Material Image (Optional)" :attributes="{ accept: '.jpg,.jpeg,.png,.webp,.gif' }" />
+    <Input
+      v-if="isPhysical"
+      name="image"
+      type="file"
+      label="Material Image (Optional)"
+      :attributes="{ accept: '.jpg,.jpeg,.png,.webp,.gif' }"
+    />
 
     <template v-if="isDigital">
+      <Input
+        name="cover_image"
+        type="file"
+        label="Custom Cover Image (Optional)"
+        :attributes="{ accept: '.jpg,.jpeg,.png,.webp,.gif' }"
+      />
       <div class="col-span-full flex items-center gap-2 mt-1">
         <input
           type="checkbox"
