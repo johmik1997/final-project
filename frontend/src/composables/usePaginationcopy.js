@@ -21,32 +21,42 @@ export function usePaginationcopy(options = {}) {
   const searchPagination = useTablePagination(perPage.value);
   const pagination = useTablePagination(perPage.value);
 
+  function normalizeQuery(query) {
+    return Object.fromEntries(
+      Object.entries(query || {}).filter(([, value]) => value !== undefined && value !== null && value !== "")
+    );
+  }
+
   function getPaginationData(next = true, current = false) {
     if (searching.value) {
-      return JSON.parse(
-        JSON.stringify({
-          searchKey: search.value || undefined,
-          search: search.value || undefined,
-          page: next
-            ? !current
-              ? ++searchPagination.page.value
-              : searchPagination.page.value
-            : --searchPagination.page.value,
-          size: searchPagination.limit.value || 25,
-        })
+      return normalizeQuery(
+        JSON.parse(
+          JSON.stringify({
+            searchKey: search.value || undefined,
+            search: search.value || undefined,
+            page: next
+              ? !current
+                ? ++searchPagination.page.value
+                : searchPagination.page.value
+              : --searchPagination.page.value,
+            size: searchPagination.limit.value || 25,
+          })
+        )
       );
     } else {
-      return JSON.parse(
-        JSON.stringify({
-          searchKey: search.value || undefined,
-          search: search.value || undefined,
-          page: next
-            ? !current
-              ? ++pagination.page.value
-              : pagination.page.value
-            : --pagination.page.value,
-          size: pagination.limit.value || 25,
-        })
+      return normalizeQuery(
+        JSON.parse(
+          JSON.stringify({
+            searchKey: search.value || undefined,
+            search: search.value || undefined,
+            page: next
+              ? !current
+                ? ++pagination.page.value
+                : pagination.page.value
+              : --pagination.page.value,
+            size: pagination.limit.value || 25,
+          })
+        )
       );
     }
   }
