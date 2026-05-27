@@ -354,6 +354,8 @@ class ReturnSerializer(serializers.ModelSerializer):
             "condition_fine",
             "fine_amount",
             "material_condition",
+            "policy_percentage_used",
+            "material_price_used",
             "created_by",
             "payment_status",
             "payment_reference",
@@ -372,6 +374,8 @@ class ReturnSerializer(serializers.ModelSerializer):
             "overdue_fine",
             "condition_fine",
             "fine_amount",
+            "policy_percentage_used",
+            "material_price_used",
             "created_by",
             "payment_status",
             "payment_reference",
@@ -401,26 +405,37 @@ class ReturnSerializer(serializers.ModelSerializer):
         borrow = attrs.get("borrow")
         if not borrow:
             raise serializers.ValidationError({"borrow": "Borrow is required."})
-
         if borrow.returns.exists():
             raise serializers.ValidationError({"borrow": "This borrow has already been returned."})
         if not getattr(getattr(borrow, "material", None), "library_id", None):
             raise serializers.ValidationError({"borrow": "This borrowed material is not assigned to a library yet."})
 
         selected_condition = attrs.get("material_condition") or "GOOD"
-        policy = get_active_library_policy(getattr(borrow.material, "library", None))
 
-        condition_policy_fields = {
-            "FAIR": "fair_condition_penalty_percent",
-            "DAMAGED": "damaged_condition_penalty_percent",
-            "LOST": "lost_condition_penalty_percent",
-        }
-        if selected_condition in condition_policy_fields:
-            field_name = condition_policy_fields[selected_condition]
-            percent_value = getattr(policy, field_name, None)
-            if percent_value is None:
+        # Only validate condition fine requirements for non-GOOD conditions
+        if selected_condition not in ("GOOD", "NEW"):
+            # 1. Policy must exist and have the percentage configured
+            policy = get_active_library_policy(getattr(borrow.material, "library", None))
+            if policy is None:
                 raise serializers.ValidationError(
-                    {"material_condition": f"Policy percentage for '{selected_condition}' condition is not configured. Please update the Library Policy before processing."}
+                    {"material_condition": "No active Library Policy found for this library. Configure a policy before processing returns with condition fines."}
+                )
+            condition_policy_field = {
+                "FAIR": "fair_condition_penalty_percent",
+                "DAMAGED": "damaged_condition_penalty_percent",
+                "LOST": "lost_condition_penalty_percent",
+            }[selected_condition]
+            percent_value = getattr(policy, condition_policy_field, None)
+            if percent_value is None or Decimal(str(percent_value)) <= 0:
+                raise serializers.ValidationError(
+                    {"material_condition": f"Policy percentage for '{selected_condition}' condition is not configured or is zero. Update the Library Policy before processing."}
+                )
+
+            # 2. Material price must exist and be greater than zero
+            material_price = getattr(borrow.material, "price", None)
+            if material_price is None or Decimal(str(material_price)) <= 0:
+                raise serializers.ValidationError(
+                    {"material_condition": f"Material price is missing or zero. Set the material price before processing a '{selected_condition}' condition return."}
                 )
 
         return attrs
@@ -434,48 +449,80 @@ class ReturnSerializer(serializers.ModelSerializer):
         borrow = validated_data["borrow"]
         now = timezone.now()
         policy = get_active_library_policy(getattr(borrow.material, "library", None))
-        grace_period_days = int(getattr(policy, "grace_period_days", 0) or 0)
-        selected_condition = validated_data.get("material_condition") or getattr(borrow.material, "condition", "GOOD")
+        selected_condition = validated_data.get("material_condition") or "GOOD"
 
+        # --- Overdue fine ---
+        grace_period_days = int(getattr(policy, "grace_period_days", 0) or 0)
         overdue_days = calculate_overdue_days(borrow.due_date, now=now, grace_period_days=grace_period_days)
         daily_fine_rate = Decimal(str(getattr(policy, "overdue_daily_rate", getattr(settings, "LIBRARY_DAILY_FINE_RATE", "0"))))
         calculated_overdue_fine = daily_fine_rate * overdue_days
 
-        condition_penalty_percent_map = {
-            "FAIR": Decimal(str(getattr(policy, "fair_condition_penalty_percent", 10) or 10)),
-            "DAMAGED": Decimal(str(getattr(policy, "damaged_condition_penalty_percent", 35) or 35)),
-            "LOST": Decimal(str(getattr(policy, "lost_condition_penalty_percent", 100) or 100)),
-        }
+        # --- Condition fine ---
+        # validate() already guaranteed policy and price exist for non-GOOD conditions,
+        # so no silent fallbacks are used here — raise hard errors if anything is missing.
         calculated_condition_fine = Decimal("0")
-        if selected_condition in condition_penalty_percent_map:
-            replacement_cost = Decimal(str(getattr(borrow.material, "price", 0) or 0))
-            calculated_condition_fine = (replacement_cost * condition_penalty_percent_map[selected_condition]) / Decimal("100")
+        policy_percentage_used = None
+        material_price_used = None
+
+        condition_policy_field_map = {
+            "FAIR": "fair_condition_penalty_percent",
+            "DAMAGED": "damaged_condition_penalty_percent",
+            "LOST": "lost_condition_penalty_percent",
+        }
+
+        if selected_condition in condition_policy_field_map:
+            if policy is None:
+                raise serializers.ValidationError(
+                    {"material_condition": "No active Library Policy found. Cannot calculate condition fine."}
+                )
+            field_name = condition_policy_field_map[selected_condition]
+            raw_percent = getattr(policy, field_name, None)
+            if raw_percent is None or Decimal(str(raw_percent)) <= 0:
+                raise serializers.ValidationError(
+                    {"material_condition": f"Policy percentage for '{selected_condition}' is not configured. Update the Library Policy and retry."}
+                )
+            raw_price = getattr(borrow.material, "price", None)
+            if raw_price is None or Decimal(str(raw_price)) <= 0:
+                raise serializers.ValidationError(
+                    {"material_condition": f"Material price is missing or zero. Set the material price before processing a '{selected_condition}' condition return."}
+                )
+            policy_percentage_used = Decimal(str(raw_percent))
+            material_price_used = Decimal(str(raw_price))
+            calculated_condition_fine = (material_price_used * policy_percentage_used) / Decimal("100")
+
+        total_fine = calculated_overdue_fine + calculated_condition_fine
 
         validated_data["material_condition"] = selected_condition
         validated_data["overdue_fine"] = calculated_overdue_fine
         validated_data["condition_fine"] = calculated_condition_fine
-        validated_data["fine_amount"] = calculated_overdue_fine + calculated_condition_fine
+        validated_data["fine_amount"] = total_fine
+        validated_data["policy_percentage_used"] = policy_percentage_used
+        validated_data["material_price_used"] = material_price_used
         validated_data["created_by"] = user
 
-        return_record = super().create(validated_data)
+        # Everything runs inside one atomic block.
+        # If saving the Return record fails for any reason, nothing is committed.
+        # The borrow is only marked RETURNED after the fine record is successfully saved.
+        with transaction.atomic():
+            return_record = super().create(validated_data)
 
-        # Update material condition if it worsened (LOST treated as most severe)
-        severity = {"NEW": 0, "GOOD": 1, "FAIR": 2, "DAMAGED": 3, "LOST": 4}
-        current_condition = getattr(borrow.material, "condition", "GOOD")
-        if severity.get(selected_condition, 1) > severity.get(current_condition, 1):
-            update_fields = ["condition"]
-            # LOST condition: disable future borrowing until fine is paid
-            if selected_condition == "LOST":
-                borrow.material.can_borrow = False
-                update_fields.append("can_borrow")
-            borrow.material.condition = selected_condition
-            borrow.material.save(update_fields=update_fields)
+            # Update material condition if it worsened
+            severity = {"NEW": 0, "GOOD": 1, "FAIR": 2, "DAMAGED": 3, "LOST": 4}
+            current_condition = getattr(borrow.material, "condition", "GOOD")
+            if severity.get(selected_condition, 1) > severity.get(current_condition, 1):
+                material_update_fields = ["condition"]
+                if selected_condition == "LOST":
+                    borrow.material.can_borrow = False
+                    material_update_fields.append("can_borrow")
+                borrow.material.condition = selected_condition
+                borrow.material.save(update_fields=material_update_fields)
 
-        # Finalize immediately only when no fine is due.
-        # If fine exists, payment verification will finalize the return.
-        if return_record.fine_amount <= 0:
-            finalize_return_for_borrow(borrow)
-            transaction.on_commit(lambda: notify_return_success(borrow, return_record))
+            # Only finalize (mark borrow RETURNED + restore copy count) when no fine is owed.
+            # When a fine exists, finalize_return_for_borrow is called by the payment flow.
+            if total_fine <= 0:
+                finalize_return_for_borrow(borrow)
+                transaction.on_commit(lambda: notify_return_success(borrow, return_record))
+
         return return_record
 
 

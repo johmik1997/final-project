@@ -138,12 +138,19 @@ class Return(models.Model):
         help_text="Fine calculated from material price × condition penalty %"
     )
     fine_amount = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=0,
+        max_digits=10, decimal_places=2, default=0,
         help_text="Total fine = overdue_fine + condition_fine"
     )
     material_condition = models.CharField(max_length=20, choices=CONDITION, default="GOOD")
+    # Audit fields — snapshot the values used at the time of calculation
+    policy_percentage_used = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True,
+        help_text="The condition penalty % from Library Policy used at return time"
+    )
+    material_price_used = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="The material price used at return time for condition fine calculation"
+    )
     created_by = models.ForeignKey(
         "backend.User",
         on_delete=models.SET_NULL,
