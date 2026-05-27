@@ -393,6 +393,8 @@ class MaterialTransferRequestSerializer(serializers.ModelSerializer):
             "material_title",
             "status",
             "requested_quantity",
+            "source_location",
+            "destination_location",
             "transferred_quantity",
             "rejection_reason",
             "requested_by",
@@ -418,18 +420,39 @@ class MaterialTransferRequestSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         material = attrs.get("material")
         requested_quantity = attrs.get("requested_quantity", 1)
+        source_location = attrs.get("source_location") or getattr(material, "location", None)
+        destination_location = attrs.get("destination_location")
 
         if not material:
             raise serializers.ValidationError({"material": "Material is required."})
 
-        if material.location != "STACK":
-            raise serializers.ValidationError({"material": "Transfer requests can only be made for materials located in the STACK."})
-
         if requested_quantity <= 0:
             raise serializers.ValidationError({"requested_quantity": "Requested quantity must be greater than zero."})
 
+        if not source_location:
+            raise serializers.ValidationError({"source_location": "Source location is required."})
+
+        if not destination_location:
+            destination_location = "SHELF" if source_location == "STACK" else "STACK"
+            attrs["destination_location"] = destination_location
+
+        if source_location == destination_location:
+            raise serializers.ValidationError({"destination_location": "Source and destination locations must be different."})
+
+        if material.location != source_location:
+            raise serializers.ValidationError(
+                {"material": f"Selected material is currently stored at {material.location}, not {source_location}."}
+            )
+
         if material.available_copies < requested_quantity:
-            raise serializers.ValidationError({"requested_quantity": f"Cannot request {requested_quantity} copies. Only {material.available_copies} available in STACK."})
+            raise serializers.ValidationError(
+                {
+                    "requested_quantity": (
+                        f"Cannot request {requested_quantity} copies. "
+                        f"Only {material.available_copies} available at {source_location}."
+                    )
+                }
+            )
 
         return attrs
 

@@ -19,18 +19,69 @@ const props = defineProps({
   borrows: { type: Array, default: () => [] },
 });
 
+function normalizeText(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function matchesLibrary(row, library) {
+  const targetId = String(library?.id || '');
+  const targetName = normalizeText(library?.name || library?.library_name);
+
+  const idCandidates = [
+    row?.library_id,
+    row?.library,
+    row?.libraryId,
+    row?.material_library_id,
+    row?.material?.library_id,
+    row?.material?.library,
+  ]
+    .filter((value) => value !== null && value !== undefined && value !== '')
+    .map((value) => String(value));
+
+  if (targetId && idCandidates.includes(targetId)) {
+    return true;
+  }
+
+  const nameCandidates = [
+    row?.library_name,
+    row?.libraryName,
+    row?.material_library_name,
+    row?.material?.library_name,
+    row?.material?.libraryName,
+  ]
+    .map((value) => normalizeText(value))
+    .filter(Boolean);
+
+  return Boolean(targetName) && nameCandidates.includes(targetName);
+}
+
+function normalizeStatus(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
 const chartData = computed(() => {
   const labels = props.libraries.map((lib) => lib?.name || lib?.library_name || 'Branch');
-  const memberCounts = props.libraries.map((lib) =>
-    props.members.filter(
-      (user) => String(user?.library_id || user?.library) === String(lib?.id)
-    ).length
-  );
+  const memberCounts = props.libraries.map((lib) => {
+    const explicitMembers = props.members.filter((user) => matchesLibrary(user, lib));
+    if (explicitMembers.length) {
+      return explicitMembers.length;
+    }
+
+    // Fallback for older records where members were not assigned a branch directly.
+    return new Set(
+      props.borrows
+        .filter((row) => matchesLibrary(row, lib))
+        .map((row) => row?.member)
+        .filter(Boolean)
+        .map((value) => String(value))
+    ).size;
+  });
   const activeBorrows = props.libraries.map((lib) =>
     props.borrows.filter(
       (row) =>
         !row?.is_returned &&
-        String(row?.library_id || row?.material_library_id || '') === String(lib?.id)
+        ['BORROWED', 'OVERDUE'].includes(normalizeStatus(row?.status)) &&
+        matchesLibrary(row, lib)
     ).length
   );
 

@@ -205,6 +205,15 @@
           </button>
           <p class="material-author">{{ row?.author || '-' }}</p>
 
+          <div v-if="!isDigital" class="material-flags">
+            <span
+              class="material-flag"
+              :class="row?.can_borrow === false ? 'flag-reference' : 'flag-borrowable'"
+            >
+              {{ row?.can_borrow === false ? 'Library use only' : 'Can be borrowed' }}
+            </span>
+          </div>
+
           <div class="material-stats">
             <div class="stat-item">
               <p class="stat-label">Category</p>
@@ -1444,6 +1453,31 @@ function remove(id) {
 
 .dark .material-author {
   color: #94a3b8;
+}
+
+.material-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.material-flag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.7rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.flag-borrowable {
+  background: rgba(59, 130, 246, 0.12);
+  color: #1d4ed8;
+}
+
+.flag-reference {
+  background: rgba(124, 58, 237, 0.12);
+  color: #6d28d9;
 }
 
 .material-stats {

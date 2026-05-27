@@ -46,6 +46,11 @@ const availabilityPercentage = computed(() => {
   const available = Number(props.material?.available_copies || 0);
   return Math.min(100, Math.max(0, (available / total) * 100));
 });
+
+const hasBorrowabilityFlag = computed(() => typeof props.material?.can_borrow === 'boolean');
+const borrowabilityLabel = computed(() =>
+  props.material?.can_borrow === false ? 'Library use only' : 'Can be borrowed'
+);
 </script>
 
 <template>
@@ -85,6 +90,15 @@ const availabilityPercentage = computed(() => {
 
       <div v-if="viewMode === 'list'" class="list-meta">
         <span>ISBN: {{ material.isbn || 'N/A' }}</span>
+      </div>
+
+      <div v-if="hasBorrowabilityFlag" class="borrowability-row">
+        <span
+          class="borrowability-pill"
+          :class="material?.can_borrow === false ? 'pill-reference' : 'pill-borrowable'"
+        >
+          {{ borrowabilityLabel }}
+        </span>
       </div>
 
       <div class="card-footer">
@@ -263,6 +277,28 @@ const availabilityPercentage = computed(() => {
 .list-meta {
   font-size: 0.72rem;
   color: #94a3b8;
+}
+
+.borrowability-row {
+  display: flex;
+  align-items: center;
+}
+
+.borrowability-pill {
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.pill-borrowable {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.pill-reference {
+  background: #ede9fe;
+  color: #6d28d9;
 }
 
 .card-footer {

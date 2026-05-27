@@ -338,6 +338,11 @@ class DigitalMaterialAccessLog(models.Model):
 
 
 class MaterialTransferRequest(models.Model):
+    LOCATION_CHOICES = [
+        ('STACK', 'STACK'),
+        ('SHELF', 'SHELF'),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     material = models.ForeignKey(
         PhysicalMaterial,
@@ -361,6 +366,18 @@ class MaterialTransferRequest(models.Model):
     )
 
     requested_quantity = models.PositiveIntegerField(default=1)
+
+    source_location = models.CharField(
+        max_length=20,
+        choices=LOCATION_CHOICES,
+        default='STACK',
+    )
+
+    destination_location = models.CharField(
+        max_length=20,
+        choices=LOCATION_CHOICES,
+        default='SHELF',
+    )
 
     transferred_quantity = models.PositiveIntegerField(
         default=0

@@ -13,6 +13,12 @@ export default [
         meta: { requiresAuth: true, roles: ['MEMBER'] }
     },
     {
+        path: '/my-circulations',
+        name: 'MemberCirculation',
+        component: () => import('@/features/borrow/pages/member-circulation/MemberCirculation.vue'),
+        meta: { requiresAuth: true, roles: ['MEMBER'] }
+    },
+    {
         path: '/borrows/add',
         name: 'AddBorrowPage',
         component: () => import('@/features/borrow/pages/AddBorrow.vue'),

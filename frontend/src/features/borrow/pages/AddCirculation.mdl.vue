@@ -8,6 +8,7 @@ import { getAllMaterials } from '../../material/api/materialApi';
 import { getAllUser } from '../../users/Api/UserApi';
 import { useCirculation } from '../store/circulationStore';
 import { toasted } from '@/utils/utils';
+import { emitEntityMutation } from '@/utils/entitySync';
 import BaseIcon from '@/components/base/BaseIcon.vue';
 import MaterialCard from '../components/MaterialCard.vue';
 import { mdiMagnify, mdiBook, mdiAccount } from '@mdi/js';
@@ -92,6 +93,7 @@ function handleSubmitCirculation() {
       if (res?.success) {
         toasted(true, 'Library circulation logged successfully');
         circStore.add(res.data);
+        emitEntityMutation('circulations', { action: 'created', id: res.data?.id || null });
         closeModal();
       } else {
         const err = res?.error || 'Failed to create circulation';

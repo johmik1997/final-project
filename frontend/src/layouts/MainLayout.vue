@@ -645,6 +645,9 @@ onUnmounted(() => {
 
 /* Header */
 .main-header {
+  position: relative;
+  z-index: 2000;
+  overflow: visible;
   flex-shrink: 0;
   border-bottom: 1px solid rgba(245, 158, 11, 0.15);
   background: rgba(255, 255, 255, 0.95);
@@ -658,6 +661,7 @@ onUnmounted(() => {
 }
 
 .header-container {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.75rem;

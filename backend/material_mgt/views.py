@@ -812,21 +812,74 @@ def _notify_role_users(*, roles, message, library=None, exclude_user=None):
         )
 
 
+def _normalize_location(value):
+    return str(value or "").strip().upper()
+
+
+def _get_transfer_direction_roles(source_location, destination_location):
+    source = _normalize_location(source_location)
+    destination = _normalize_location(destination_location)
+
+    if source == "STACK" and destination == "SHELF":
+        return {
+            "requesters": {"FRONTDESKSTAFF", "ADMIN", "SUPERADMIN"},
+            "fulfillers": {"STACKSTAFF", "ADMIN", "SUPERADMIN"},
+            "request_notification_roles": ["STACK STAFF"],
+            "fulfilled_notification_roles": ["FRONT DESK STAFF"],
+        }
+
+    if source == "SHELF" and destination == "STACK":
+        return {
+            "requesters": {"STACKSTAFF", "ADMIN", "SUPERADMIN"},
+            "fulfillers": {"FRONTDESKSTAFF", "ADMIN", "SUPERADMIN"},
+            "request_notification_roles": ["FRONT DESK STAFF"],
+            "fulfilled_notification_roles": ["STACK STAFF"],
+        }
+
+    return {
+        "requesters": {"ADMIN", "SUPERADMIN"},
+        "fulfillers": {"ADMIN", "SUPERADMIN"},
+        "request_notification_roles": [],
+        "fulfilled_notification_roles": [],
+    }
+
+
 class MaterialTransferRequestViewSet(viewsets.ModelViewSet):
     queryset = MaterialTransferRequest.objects.all().select_related("material", "requested_by", "fulfilled_by").order_by("-created_at")
     serializer_class = MaterialTransferRequestSerializer
     permission_classes = [IsAuthenticated]
 
+    def _can_request_direction(self, user, source_location, destination_location):
+        role = normalize_role(getattr(user, "role", None))
+        return role in _get_transfer_direction_roles(source_location, destination_location)["requesters"]
+
+    def _can_fulfill_direction(self, user, source_location, destination_location):
+        role = normalize_role(getattr(user, "role", None))
+        return role in _get_transfer_direction_roles(source_location, destination_location)["fulfillers"]
+
     def perform_create(self, serializer):
+        source_location = serializer.validated_data.get("source_location")
+        destination_location = serializer.validated_data.get("destination_location")
+        if not self._can_request_direction(self.request.user, source_location, destination_location):
+            raise ValidationError(
+                {
+                    "detail": (
+                        f"You are not allowed to request transfers from {source_location} to {destination_location}."
+                    )
+                }
+            )
+
         transfer = serializer.save(requested_by=self.request.user)
         invalidate_material_caches()
         material_title = transfer.material.title
         library = transfer.material.library
+        role_config = _get_transfer_direction_roles(transfer.source_location, transfer.destination_location)
         _notify_role_users(
-            roles=["STACK STAFF"],
+            roles=role_config["request_notification_roles"],
             message=(
                 f"Transfer request #{str(transfer.id)[:8]} created for "
-                f"'{material_title}' ({transfer.requested_quantity} copies)."
+                f"'{material_title}' ({transfer.requested_quantity} copies) "
+                f"from {transfer.source_location} to {transfer.destination_location}."
             ),
             library=library,
         )
@@ -843,34 +896,61 @@ class MaterialTransferRequestViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        if not self._can_fulfill_direction(request.user, transfer.source_location, transfer.destination_location):
+            return Response(
+                {
+                    "detail": (
+                        f"You are not allowed to fulfill transfers from "
+                        f"{transfer.source_location} to {transfer.destination_location}."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         with db_transaction.atomic():
             material = PhysicalMaterial.objects.select_for_update().get(pk=transfer.material.pk)
 
             if material.available_copies < transfer.requested_quantity:
                 return Response(
-                    {"detail": "Not enough copies available in STACK."},
+                    {"detail": f"Not enough copies available in {transfer.source_location}."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # 1. Decrease total_copies and available_copies from the source STACK material
+            if _normalize_location(material.location) != _normalize_location(transfer.source_location):
+                return Response(
+                    {
+                        "detail": (
+                            f"The source material is currently stored at {material.location}. "
+                            f"Expected {transfer.source_location}."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # 1. Decrease total and available copies from the source location.
             material.total_copies = max(0, material.total_copies - transfer.requested_quantity)
             material.available_copies = max(0, material.available_copies - transfer.requested_quantity)
             material.save()
 
-            # 2. Look for an existing SHELF material with the same attributes in the same library
-            shelf_material = PhysicalMaterial.objects.filter(
+            # 2. Find or create the destination location copy in the same library.
+            destination_material = PhysicalMaterial.objects.filter(
                 title=material.title,
                 author=material.author,
+                category=material.category,
+                genre=material.genre,
+                department=material.department,
+                language=material.language,
+                isbn=material.isbn,
                 library=material.library,
-                location="SHELF"
+                location=transfer.destination_location,
             ).first()
 
-            if shelf_material:
-                shelf_material.total_copies += transfer.requested_quantity
-                shelf_material.available_copies = (shelf_material.available_copies or 0) + transfer.requested_quantity
-                shelf_material.save()
+            if destination_material:
+                destination_material.total_copies += transfer.requested_quantity
+                destination_material.available_copies = (destination_material.available_copies or 0) + transfer.requested_quantity
+                destination_material.save()
             else:
-                shelf_material = PhysicalMaterial.objects.create(
+                destination_material = PhysicalMaterial.objects.create(
                     title=material.title,
                     author=material.author,
                     category=material.category,
@@ -881,7 +961,7 @@ class MaterialTransferRequestViewSet(viewsets.ModelViewSet):
                     isbn=material.isbn,
                     price=material.price,
                     condition=material.condition,
-                    location="SHELF",
+                    location=transfer.destination_location,
                     total_copies=transfer.requested_quantity,
                     available_copies=transfer.requested_quantity,
                     can_borrow=material.can_borrow,
@@ -898,11 +978,13 @@ class MaterialTransferRequestViewSet(viewsets.ModelViewSet):
         invalidate_material_caches()
 
         material_title = material.title
+        role_config = _get_transfer_direction_roles(transfer.source_location, transfer.destination_location)
         _notify_role_users(
-            roles=["FRONT DESK STAFF"],
+            roles=role_config["fulfilled_notification_roles"],
             message=(
                 f"Transfer request fulfilled: '{material_title}' "
-                f"({transfer.transferred_quantity} copies) moved to shelf."
+                f"({transfer.transferred_quantity} copies) moved from "
+                f"{transfer.source_location} to {transfer.destination_location}."
             ),
             library=material.library,
         )
@@ -913,7 +995,7 @@ class MaterialTransferRequestViewSet(viewsets.ModelViewSet):
                 member_id=transfer.requested_by,
                 message=(
                     f"Your transfer for '{material_title}' was fulfilled. "
-                    f"{transfer.transferred_quantity} copies are now on the shelf."
+                    f"{transfer.transferred_quantity} copies moved to {transfer.destination_location}."
                 )[:200],
                 status="UNREAD",
             )
@@ -927,6 +1009,14 @@ class MaterialTransferRequestViewSet(viewsets.ModelViewSet):
         transfer = self.get_object()
         if transfer.status != "PENDING":
             return Response({"detail": "Only pending transfers can be cancelled."}, status=status.HTTP_400_BAD_REQUEST)
+
+        role = normalize_role(getattr(request.user, "role", None))
+        if (
+            request.user != transfer.requested_by
+            and role not in {"ADMIN", "SUPERADMIN"}
+            and not self._can_fulfill_direction(request.user, transfer.source_location, transfer.destination_location)
+        ):
+            return Response({"detail": "You are not allowed to cancel this transfer request."}, status=status.HTTP_403_FORBIDDEN)
         
         transfer.status = "CANCELLED"
         transfer.completed_at = timezone.now()

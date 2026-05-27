@@ -19,6 +19,7 @@ const isDigital = computed(() => {
   const t = String(props.initialData?.material_type || '').toLowerCase();
   return t === 'digital';
 });
+const isPhysical = computed(() => !isDigital.value);
 
 const allowDownloadable = computed(() => {
   const v = props.initialData?.allow_downloadable;
@@ -113,8 +114,22 @@ function toDateInputValue(value) {
       :attributes="{ placeholder: 'Select Library' }"
     />
 
-    <Input name="total_copies" type="number" label="Total Copies" validation="required|numeric" :value="initialData?.total_copies ?? ''" />
-    <Input name="price" type="number" label="Price" :value="initialData?.price ?? ''" :attributes="{ step: '0.01' }" />
+    <Input
+      v-if="isPhysical"
+      name="total_copies"
+      type="number"
+      label="Total Copies"
+      validation="required|numeric"
+      :value="initialData?.total_copies ?? ''"
+    />
+    <Input
+      v-if="isPhysical"
+      name="price"
+      type="number"
+      label="Price"
+      :value="initialData?.price ?? ''"
+      :attributes="{ step: '0.01' }"
+    />
     <Input name="image" type="file" label="Material Image (Optional)" :attributes="{ accept: '.jpg,.jpeg,.png,.webp,.gif' }" />
 
     <template v-if="isDigital">
@@ -135,15 +150,17 @@ function toDateInputValue(value) {
     </template>
 
     <Select
+      v-if="isPhysical"
       name="condition"
       label="Condition"
       validation="required"
       :value="initialData?.condition || ''"
-     :options="['NEW', 'GOOD', 'FAIR', 'DAMAGED']"
+      :options="['NEW', 'GOOD', 'FAIR', 'DAMAGED']"
       :attributes="{ placeholder: 'Select Condition' }"
     />
 
     <Select
+      v-if="isPhysical"
       name="can_borrow"
       label="Can be Borrowed?"
       validation="required"

@@ -19,7 +19,6 @@ const props = defineProps({
 
 // Initialize store and router
 const authStore = useAuth();
-console.log(authStore);
 
 const router = useRouter();
 const isScrolled = ref(false);
@@ -32,13 +31,7 @@ const user = authStore?.auth?.user || { name: "Birhane Araya", role: "Marketing 
 
 // Process the profile image
 async function processProfilePicture() {
-  console.log("authStore:", authStore);
-  console.log("authStore.auth:", authStore.auth);
-  console.log("authStore.auth.user:", authStore.auth?.user);
-  
   const profilePic = authStore.auth?.user?.profilePicture;
-
-  console.log("Profile Picture:", profilePic);
 
   if (profilePic) {
     if (!profilePic.startsWith("data:image/")) {
@@ -79,6 +72,7 @@ watch(inputData, () => {
 // Toggle user menu dropdown visibility
 const showUserMenu = ref(false);
 const toggleUserMenu = () => {
+  showNotifications.value = false;
   showUserMenu.value = !showUserMenu.value;
 };
 
@@ -134,8 +128,8 @@ async function markAllAsRead() {
 }
 
 function toggleNotifications() {
-  showNotifications.value = !showNotifications.value;
   showUserMenu.value = false;
+  showNotifications.value = !showNotifications.value;
   if (showNotifications.value) {
     fetchNotifications();
   }
@@ -302,6 +296,9 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   align-items: center;
   position: relative;
+  z-index: 2100;
+  isolation: isolate;
+  overflow: visible;
   background: transparent;
   transition: all 0.3s ease;
 }
@@ -527,7 +524,7 @@ onBeforeUnmount(() => {
   border-radius: 1rem;
   box-shadow: 0 20px 40px -12px rgba(15, 23, 42, 0.15);
   padding: 0.5rem;
-  z-index: 50;
+  z-index: 2200;
   border: 1px solid rgba(226, 232, 240, 0.9);
   backdrop-filter: blur(10px);
 }
@@ -587,7 +584,7 @@ onBeforeUnmount(() => {
 .dropdown-overlay {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: 2050;
 }
 
 /* Responsive Adjustments */
@@ -661,7 +658,7 @@ onBeforeUnmount(() => {
   border-radius: 1.25rem;
   border: 1px solid rgba(203, 213, 225, 0.8);
   box-shadow: 0 20px 40px -12px rgba(15, 23, 42, 0.15);
-  z-index: 50;
+  z-index: 2200;
   overflow: hidden;
   animation: slide-in 0.2s ease-out;
 }

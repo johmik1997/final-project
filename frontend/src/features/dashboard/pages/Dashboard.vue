@@ -292,6 +292,7 @@ const quickActions = computed(() => {
     return [
       { label: 'Browse Materials', path: '/material', icon: mdiBookOpenPageVariant, tone: 'blue' },
       { label: 'My Borrows', path: '/my-borrows', icon: mdiBookshelf, tone: 'amber' },
+      { label: 'My Circulations', path: '/my-circulations', icon: mdiLibrary, tone: 'green' },
       { label: 'My Reservations', path: '/reservations', icon: mdiClockOutline, tone: 'green' },
       { label: 'Fine Payments', path: '/fine-payments', icon: mdiCreditCardCheckOutline, tone: 'violet' },
       reportsAction,

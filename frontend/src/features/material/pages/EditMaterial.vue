@@ -118,8 +118,6 @@ function update({ values }) {
   const payload = new FormData();
   Object.entries(values || {}).forEach(([key, value]) => payload.append(key, value ?? ''));
   payload.set('published_date', toDateInputValue(values.published_date));
-  payload.set('total_copies', Number(values.total_copies || 0));
-  payload.set('price', Number(values.price || 0));
   const allowDownload =
     values.allow_downloadable === true ||
     values.allow_downloadable === 'true' ||
@@ -130,6 +128,16 @@ function update({ values }) {
   const imageFile = imageInput?.files?.[0] || null;
   if (imageFile) {
     payload.set('image', imageFile, imageFile.name);
+  }
+
+  if (materialType.value === 'physical') {
+    payload.set('total_copies', Number(values.total_copies || 0));
+    payload.set('price', Number(values.price || 0));
+  } else {
+    payload.delete('total_copies');
+    payload.delete('price');
+    payload.delete('condition');
+    payload.delete('can_borrow');
   }
 
   updateReq.send(

@@ -74,6 +74,14 @@ export default [
     roles: ["MEMBER"],
   },
   {
+    path: "/my-circulations",
+    name: "My Circulations",
+    icon: icons.borrow,
+    meta: { requiresAuth: true, permissions: [] },
+    type: "Management",
+    roles: ["MEMBER"],
+  },
+  {
     path: "/fine-payments",
     name: "Fine Payments",
     icon: icons.transfer,
