@@ -1,4 +1,4 @@
 Dear {{ member_name }},
 
 The material you reserved, "{{ material_title }}", is now available.
-Please visit the library to complete borrowing.
+Please visit the library within {{ reservation_hold_hours|default:24 }} hours to complete borrowing before your reservation expires.
