@@ -230,7 +230,7 @@ onUnmounted(() => {
         <div class="sidebar-footer">
           <div class="footer-content">
             <span class="footer-text">© 2026 HU-DLRBS</span>
-            <span class="footer-version">v2.0</span>
+            <span class="footer-version">v1.0</span>
           </div>
         </div>
       </aside>
