@@ -3,7 +3,6 @@ import { responseHandler } from "./ApiResponseHandler";
 import { useAuth } from "@/stores/auth";
 
 const backendApiUrl = import.meta.env.VITE_API_URL || import.meta.env.v_API_URL;
-const authApiUrl = import.meta.env.VITE_AUTH_API || import.meta.env.v_AUTH_API;
 
 export default class ApiService {
   api;
@@ -119,16 +118,12 @@ export default class ApiService {
   _getRefreshEndpoints() {
     const strip = (v) => String(v || "").replace(/\/+$/, "");
     const apiBase = strip(backendApiUrl);
-    const authBase = strip(authApiUrl);
 
     const endpoints = [
-     
-      `${authBase}/user/auth/token/refresh/`,
-      `${authBase}/user/auth/token/refresh`,
+      `${apiBase}/user/auth/token/refresh/`,
     ].filter((url) => {
       if (!url || url.startsWith("/")) return false;
-      if (url.startsWith("undefined")) return false;
-      if (url.startsWith("null")) return false;
+      if (url.startsWith("undefined") || url.startsWith("null")) return false;
       return true;
     });
 

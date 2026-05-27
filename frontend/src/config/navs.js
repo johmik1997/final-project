@@ -79,7 +79,7 @@ export default [
     icon: icons.transfer,
     meta: { requiresAuth: true, permissions: [] },
     type: "Management",
-    roles: ["MEMBER", "ADMIN", "SUPER ADMIN"],
+    roles: ["MEMBER"],
   },
   {
     path: "/reservations",
@@ -103,7 +103,7 @@ export default [
     icon: icons.library,
     meta: { requiresAuth: true, permissions: [] },
     type: "Settings",
-    roles: ["ADMIN", "SUPER ADMIN"],
+    roles: [ "SUPER ADMIN"],
   },  
   {
     path: "/library-policy",

@@ -118,8 +118,22 @@ def notify_reserved_members_material_available(material):
 
     for reservation in active_reservations:
         member_email = (reservation.member.email or "").strip()
+
+        # Always create in-app notification
+        try:
+            from user_mgt.models import Notification
+            Notification.objects.create(
+                member_id=reservation.member,
+                message=f"Good news! '{reservation.material_id.title}' is now available. Visit the library to borrow it before your reservation expires.",
+                status='UNREAD'
+            )
+        except Exception as e:
+            print(f"Error creating availability notification: {e}")
+
         if not member_email:
             summary.skipped_missing_email += 1
+            reservation.availability_notified_at = now
+            reservation.save(update_fields=["availability_notified_at"])
             continue
 
         member_name = (reservation.member.first_name or reservation.member.id_number).strip()

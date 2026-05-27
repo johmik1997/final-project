@@ -233,15 +233,9 @@ function submitReservation() {
     return;
   }
 
-  if (!reserveDate.value) {
-    toasted(false, 'Please choose a reservation date');
-    return;
-  }
-
   const payload = {
     material_id: selectedMaterial.value.id,
     status: 'RESERVED',
-    reserve_date: reserveDate.value,
   };
 
   reservationReq.send(
@@ -302,7 +296,7 @@ function submitReservation() {
     </div>
 
     <div v-if="activeView === 'reserve'" class="mb-6">
-      <ReservationStepNav :has-selection="Boolean(selectedMaterial)" :has-date="Boolean(reserveDate)" />
+      <ReservationStepNav :has-selection="Boolean(selectedMaterial)" />
     </div>
 
     <div v-if="activeView === 'reserve'" class="mb-6">
