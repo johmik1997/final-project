@@ -102,55 +102,62 @@ def sync_overdue_borrow_statuses(base_queryset=None, now=None):
 
 def notify_reserved_members_material_available(material):
     """
-    Notify active reservation holders that a material copy became available.
+    Notify the first active reservation holder that a material copy became available.
     """
     now = timezone.now()
     summary = ReservationNotificationSummary(material_id=str(material.pk))
 
-    active_reservations = Reservation.objects.select_related("member", "material_id").filter(
+    reservation = Reservation.objects.select_related("member", "material_id").filter(
         material_id=material,
         status="RESERVED",
         expiry_date__gt=now,
         availability_notified_at__isnull=True,
-    ).order_by("reserve_date")
+    ).order_by("reserve_date").first()
 
-    summary.scanned = active_reservations.count()
+    if not reservation:
+        return summary
 
-    for reservation in active_reservations:
-        member_email = (reservation.member.email or "").strip()
+    summary.scanned = 1
 
-        # Always create in-app notification
-        try:
-            from user_mgt.models import Notification
-            Notification.objects.create(
-                member_id=reservation.member,
-                message=f"Good news! '{reservation.material_id.title}' is now available. Visit the library to borrow it before your reservation expires.",
-                status='UNREAD'
-            )
-        except Exception as e:
-            print(f"Error creating availability notification: {e}")
+    member_email = (reservation.member.email or "").strip()
+    hold_hours = int(getattr(get_active_library_policy(getattr(material, 'library', None)), 'reservation_hold_hours', 24) or 24)
+    message_text = (
+        f"Good news! '{reservation.material_id.title}' is now available. "
+        f"Please visit the library within {hold_hours} hours to borrow it before your reservation expires."
+    )
 
-        if not member_email:
-            summary.skipped_missing_email += 1
-            reservation.availability_notified_at = now
-            reservation.save(update_fields=["availability_notified_at"])
-            continue
+    # Always create in-app notification
+    try:
+        from user_mgt.models import Notification
+        Notification.objects.create(
+            member_id=reservation.member,
+            message=message_text,
+            status='UNREAD'
+        )
+    except Exception as e:
+        print(f"Error creating availability notification: {e}")
 
-        member_name = (reservation.member.first_name or reservation.member.id_number).strip()
-        try:
-            send_templated_email_background(
-                template_name="reservation_available",
-                context={
-                    "member_name": member_name,
-                    "material_title": reservation.material_id.title,
-                },
-                recipients=[member_email],
-            )
-            reservation.availability_notified_at = now
-            reservation.save(update_fields=["availability_notified_at"])
-            summary.emailed += 1
-        except Exception as exc:
-            summary.errors.append(f"Reservation {reservation.id}: {exc}")
+    reservation.availability_notified_at = now
+    reservation.save(update_fields=["availability_notified_at"])
+
+    if not member_email:
+        summary.skipped_missing_email += 1
+        return summary
+
+    member_name = (reservation.member.first_name or reservation.member.id_number).strip()
+    try:
+        send_templated_email_background(
+            template_name="reservation_available",
+            context={
+                "member_name": member_name,
+                "material_title": reservation.material_id.title,
+                "reservation_hold_hours": hold_hours,
+            },
+            recipients=[member_email],
+        )
+        summary.emailed += 1
+    except Exception as exc:
+        summary.errors.append(f"Reservation {reservation.id}: {exc}")
 
     return summary
 

@@ -15,6 +15,7 @@ class ReservationSerializer(serializers.ModelSerializer):
 
     material_title = serializers.CharField(source="material_id.title", read_only=True)
     material_author = serializers.CharField(source="material_id.author", read_only=True)
+    member_name = serializers.SerializerMethodField()
     member_id_number = serializers.CharField(source="member.id_number", required=False)
     library_name = serializers.CharField(source="material_id.library.name", read_only=True)
     class Meta:
@@ -28,6 +29,7 @@ class ReservationSerializer(serializers.ModelSerializer):
             "status",
             "material_title",
             "material_author",
+            "member_name",
             "member_id_number",
             "library_name",
         ]
@@ -40,7 +42,17 @@ class ReservationSerializer(serializers.ModelSerializer):
             "status",
             "material_title",
             "material_author",
+            "member_name",
         ]
+
+    def get_member_name(self, obj):
+        if not obj.member:
+            return None
+        full_name = getattr(obj.member, 'full_name', None)
+        if full_name:
+            return full_name
+        name = f"{getattr(obj.member, 'first_name', '') or ''} {getattr(obj.member, 'last_name', '') or ''}".strip()
+        return name or getattr(obj.member, 'id_number', None)
 
     def validate(self, attrs):
 
@@ -199,6 +211,18 @@ class BorrowSerializer(serializers.ModelSerializer):
         if reservation:
             if reservation.status != "RESERVED" or reservation.expiry_date <= timezone.now():
                 raise serializers.ValidationError({"reservation": "Reservation is inactive or expired."})
+
+            first_reservation = Reservation.objects.filter(
+                material_id=reservation.material_id,
+                status="RESERVED",
+                expiry_date__gt=timezone.now()
+            ).order_by("reserve_date").first()
+
+            if not first_reservation or first_reservation.id != reservation.id:
+                raise serializers.ValidationError({
+                    "reservation": "This reservation is not first in the queue. Please honor the reservation order."
+                })
+
             attrs["member"] = reservation.member
             attrs["material"] = reservation.material_id
 
@@ -242,7 +266,19 @@ class BorrowSerializer(serializers.ModelSerializer):
 
         # Do not trust cached available_copies alone; compute effective availability.
         active_borrows = Borrow.objects.filter(material=material).exclude(status="RETURNED").count()
-        effective_available = material.total_copies - active_borrows
+        active_reservations = Reservation.objects.filter(
+            material_id=material,
+            status="RESERVED",
+            expiry_date__gt=timezone.now(),
+        ).count()
+
+        if not reservation:
+            effective_available = material.total_copies - active_borrows - active_reservations
+            if effective_available <= 0:
+                raise serializers.ValidationError({"material": "No available copies are free to borrow. This material is reserved by another member."})
+        else:
+            effective_available = material.total_copies - active_borrows
+
         if effective_available <= 0:
             raise serializers.ValidationError({"material": "No available copies to borrow."})
 

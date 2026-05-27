@@ -14,13 +14,19 @@ function* getId() {
 
 export const genId = getId();
 export function getQueryFormObject(query) {
-  return Object.keys(query)
-    .filter(q => query[q] !== undefined && query[q] !== null && query[q] !== "")
-    .reduce((querys, q, idx, filtered) => {
-      querys += `${q}=${encodeURIComponent(query[q])}`;
-      if (idx != filtered.length - 1) querys += `&`;
-      return querys;
-    }, "?");
+  const filteredKeys = Object.keys(query || {}).filter(
+    (q) => query[q] !== undefined && query[q] !== null && query[q] !== ""
+  );
+
+  if (!filteredKeys.length) {
+    return "";
+  }
+
+  return filteredKeys.reduce((querys, q, idx) => {
+    querys += `${q}=${encodeURIComponent(query[q])}`;
+    if (idx !== filteredKeys.length - 1) querys += `&`;
+    return querys;
+  }, "?");
 }
 
 export const toast = {

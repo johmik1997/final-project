@@ -1012,7 +1012,7 @@ const pendingAction = ref('');
 const pendingItemTitle = ref('');
 
 function viewLibraryCollections(library) {
-  router.push(`/app/materials?library=${encodeURIComponent(library.name)}`);
+  router.push(`/material?library=${encodeURIComponent(library.name)}`);
 }
 
 function getBookImage(title, category) {
