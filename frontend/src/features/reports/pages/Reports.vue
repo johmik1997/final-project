@@ -1270,7 +1270,7 @@ onMounted(loadReports);
   border-radius: 0.5rem;
   border: 1px solid rgba(255, 255, 255, 0.25);
   background: transparent;
-  color: #f8fafc;
+  color: #13110788;
   font-size: 0.875rem;
   cursor: pointer;
 }
