@@ -251,7 +251,7 @@ function submitReservation() {
 
         if (res?.data) reservationStore.add(created);
         emitEntityMutation('reservations', { action: 'created', id: created?.id });
-        toasted(true, 'Reservation created successfully');
+        toasted(true, 'Reservation created successfully. This reservation is held for 24 hours.');
         resetSelection();
         refreshReservations();
         switchToHistory();

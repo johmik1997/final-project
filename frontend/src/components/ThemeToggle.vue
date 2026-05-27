@@ -2,8 +2,10 @@
   <button
     @click="toggleTheme"
     class="theme-toggle-btn"
-    :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
+    :title="hoverLabel"
+    :aria-label="hoverLabel"
   >
+    <span class="theme-tooltip">{{ hoverLabel }}</span>
     <!-- Sun icon for light mode -->
     <svg
       v-if="!isDark"
@@ -29,14 +31,16 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useTheme } from '@/composables/useTheme'
 
 const { isDark, toggleTheme } = useTheme()
+const hoverLabel = computed(() => (isDark.value ? 'Light mode' : 'Dark mode'))
 </script>
 
 <style scoped>
 .theme-toggle-btn {
-  @apply p-2 rounded-lg transition-all duration-200 hover:bg-amber-500/10 focus:outline-none focus:ring-2 focus:ring-amber-500/50;
+  @apply relative p-2 rounded-lg transition-all duration-200 hover:bg-amber-500/10 focus:outline-none focus:ring-2 focus:ring-amber-500/50;
 }
 
 .theme-icon {
@@ -49,5 +53,15 @@ const { isDark, toggleTheme } = useTheme()
 
 .moon-icon {
   @apply text-slate-600 dark:text-slate-300;
+}
+
+.theme-tooltip {
+  @apply pointer-events-none absolute left-1/2 top-full z-10 mt-2 -translate-x-1/2 rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white opacity-0 shadow-lg transition-opacity duration-200 dark:bg-slate-100 dark:text-slate-900;
+  white-space: nowrap;
+}
+
+.theme-toggle-btn:hover .theme-tooltip,
+.theme-toggle-btn:focus-visible .theme-tooltip {
+  @apply opacity-100;
 }
 </style>

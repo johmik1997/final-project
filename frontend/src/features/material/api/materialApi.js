@@ -12,6 +12,11 @@ function resolvePath(type = "physical") {
   return TYPE_PATHS[key] || TYPE_PATHS.physical;
 }
 
+function buildCollectionUrl(path, query = {}) {
+  const qr = getQueryFormObject(query || {});
+  return `${path}/${qr && qr !== "?" ? qr : ""}`;
+}
+
 export function CreateMaterial(data, type = "physical") {
   const path = resolvePath(type);
   return api.addAuthenticationHeader().post(`${path}/`, data);
@@ -27,8 +32,7 @@ export function createDigitalMaterial(data) {
 
 export function getAllMaterials(query = {}, type = "physical") {
   const path = resolvePath(type);
-  const qr = getQueryFormObject(query);
-  return api.addAuthenticationHeader().get(`${path}/${qr}`);
+  return api.addAuthenticationHeader().get(buildCollectionUrl(path, query));
 }
 
 export function getMaterialById(id, type = "physical") {

@@ -115,6 +115,12 @@ class Circulation(models.Model):
 
 # Return Table
 class Return(models.Model):
+    CONDITION = [
+        ("NEW", "NEW"),
+        ("GOOD", "GOOD"),
+        ("FAIR", "FAIR"),
+        ("DAMAGED", "DAMAGED"),
+    ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     borrow = models.ForeignKey(
         Borrow,
@@ -127,6 +133,7 @@ class Return(models.Model):
         decimal_places=2,
         default=0
     )
+    material_condition = models.CharField(max_length=20, choices=CONDITION, default="GOOD")
     created_by = models.ForeignKey(
         "backend.User",
         on_delete=models.SET_NULL,

@@ -125,6 +125,7 @@ class BorrowSerializer(serializers.ModelSerializer):
     returned_at = serializers.SerializerMethodField()
     final_fine_amount = serializers.SerializerMethodField()
     library_name = serializers.CharField(source="material.library.name", read_only=True)
+    material_condition = serializers.CharField(source="material.condition", read_only=True)
 
     class Meta:
         model = Borrow
@@ -143,6 +144,7 @@ class BorrowSerializer(serializers.ModelSerializer):
             "member_name",
             "material_author",
             "library_name",
+            "material_condition",
             "is_returned",
             "return_id",
             "returned_at",
@@ -299,6 +301,7 @@ class ReturnSerializer(serializers.ModelSerializer):
     settlement_status = serializers.SerializerMethodField()
     requires_payment = serializers.SerializerMethodField()
     library_name = serializers.CharField(source="borrow.material.library.name", read_only=True)
+    material_condition = serializers.ChoiceField(choices=Return.CONDITION, required=False)
 
     class Meta:
         model = Return
@@ -312,6 +315,7 @@ class ReturnSerializer(serializers.ModelSerializer):
             "due_date",
             "return_date",
             "fine_amount",
+            "material_condition",
             "created_by",
             "payment_status",
             "payment_reference",
@@ -375,13 +379,30 @@ class ReturnSerializer(serializers.ModelSerializer):
         now = timezone.now()
         policy = get_active_library_policy(getattr(borrow.material, "library", None))
         grace_period_days = int(getattr(policy, "grace_period_days", 0) or 0)
+        selected_condition = validated_data.get("material_condition") or getattr(borrow.material, "condition", "GOOD")
 
         overdue_days = calculate_overdue_days(borrow.due_date, now=now, grace_period_days=grace_period_days)
         daily_fine_rate = Decimal(str(getattr(policy, "overdue_daily_rate", getattr(settings, "LIBRARY_DAILY_FINE_RATE", "0"))))
-        validated_data["fine_amount"] = daily_fine_rate * overdue_days
+        condition_penalty_percent_map = {
+            "FAIR": Decimal(str(getattr(policy, "fair_condition_penalty_percent", 10) or 10)),
+            "DAMAGED": Decimal(str(getattr(policy, "damaged_condition_penalty_percent", 35) or 35)),
+        }
+        condition_penalty = Decimal("0")
+        if selected_condition in condition_penalty_percent_map:
+            replacement_cost = Decimal(str(getattr(borrow.material, "price", 0) or 0))
+            condition_penalty = (replacement_cost * condition_penalty_percent_map[selected_condition]) / Decimal("100")
+
+        validated_data["material_condition"] = selected_condition
+        validated_data["fine_amount"] = (daily_fine_rate * overdue_days) + condition_penalty
         validated_data["created_by"] = user
 
         return_record = super().create(validated_data)
+
+        severity = {"NEW": 0, "GOOD": 1, "FAIR": 2, "DAMAGED": 3}
+        current_condition = getattr(borrow.material, "condition", "GOOD")
+        if severity.get(selected_condition, 1) > severity.get(current_condition, 1):
+            borrow.material.condition = selected_condition
+            borrow.material.save(update_fields=["condition"])
 
         # Finalize immediately only when no fine is due.
         # If fine exists, payment verification will finalize the return.

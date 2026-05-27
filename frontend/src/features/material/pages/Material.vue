@@ -213,6 +213,9 @@
               {{ row?.can_borrow === false ? 'Library use only' : 'Can be borrowed' }}
             </span>
           </div>
+          <p v-else-if="row?.allow_downloadable === false" class="material-restriction">
+            Copyright restricted
+          </p>
 
           <div class="material-stats">
             <div class="stat-item">
@@ -525,6 +528,7 @@ const userRole = computed(() => {
 })
 
 const pagination = usePaginations({
+  perPage: 200,
   store: materialStore,
   cb: (query) => {
     const enrichedQuery = { ...query }
@@ -580,6 +584,24 @@ const conditions = computed(() => {
 
 const filteredRows = computed(() => {
   let rows = typeFilteredRows.value || []
+  const normalizedSearch = String(searchQuery.value || '').trim().toLowerCase()
+
+  if (normalizedSearch) {
+    rows = rows.filter((row) =>
+      [
+        row?.title,
+        row?.author,
+        row?.isbn,
+        row?.barcode,
+        row?.category,
+        row?.genre,
+        row?.library_name,
+        row?.condition,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedSearch))
+    )
+  }
 
   if (selectedCategory.value) {
     rows = rows.filter((row) => (row?.category || row?.genre) === selectedCategory.value)
