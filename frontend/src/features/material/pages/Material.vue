@@ -484,12 +484,14 @@ async function submitImport() {
     const res = await apiService.addAuthenticationHeader().post('/material/physical-materials/import-xls/', formData)
     
     const responseData = res?.data || res
+    console.log('Import response:', responseData)
     
     // In Vue, standard api responses are wrapped. Let's make sure we check the actual count values returned by django view.
     if (res?.success || responseData?.success || responseData?.created_count !== undefined) {
       importResults.value = responseData
       toasted(true, `Successfully imported ${responseData.created_count} physical materials`)
       pagination.refresh()
+      if (!responseData.failed_count) closeImportModal()
     } else {
       toasted(false, 'Failed to import materials', res?.error || responseData?.detail || 'Validation error')
     }
@@ -506,6 +508,12 @@ async function submitImport() {
     importing.value = false
   }
 }
+
+const userRole = computed(() => {
+  const stored = JSON.parse(localStorage.getItem('userDetail') || '{}')
+  const user = stored?.user || stored || {}
+  return normalizeRoleValue(user?.roleName || user?.role || user?.userRole)
+})
 
 const pagination = usePaginations({
   store: materialStore,
@@ -531,34 +539,21 @@ const addButtonLabel = computed(() =>
   activeType.value === 'digital' ? 'Add Digital Material' : 'Add Physical Material'
 )
 
-const userRole = computed(() => {
-  const stored = JSON.parse(localStorage.getItem('userDetail') || '{}')
-  const user = stored?.user || stored || {}
-  return normalizeRoleValue(user?.roleName || user?.role || user?.userRole)
-})
+const ROLES_SEE_SHELF = new Set(['MEMBER', 'FRONT DESK STAFF', 'ADMIN STORE', 'SUPER ADMIN', 'TECHNICAL STAFF'])
+const ROLES_SEE_STACK = new Set(['MEMBER', 'STACK STAFF', 'ADMIN STORE', 'SUPER ADMIN', 'TECHNICAL STAFF'])
 
 const typeFilteredRows = computed(() => {
   return (materialStore.materials || []).filter((row) => {
     const rowType = String(row?.material_type || row?.materialType || row?.type || '')
-      .toLowerCase()
-      .replace(/_/g, ' ')
-      .trim()
+      .toLowerCase().trim()
 
-    if (!rowType) return true
-    const matchType = activeType.value === 'digital'
-      ? rowType.includes('digital')
-      : rowType.includes('physical')
-
-    if (!matchType) return false
+    if (rowType === 'physical' && activeType.value !== 'physical') return false
+    if (rowType === 'digital' && activeType.value !== 'digital') return false
 
     if (activeType.value === 'physical') {
       const loc = String(row?.location || '').toUpperCase().trim()
-      if (loc === 'SHELF') {
-        return ['FRONT DESK STAFF', 'ADMIN', 'SUPER ADMIN', 'TECHNICAL STAFF'].includes(userRole.value)
-      }
-      if (loc === 'STACK') {
-        return ['STACK STAFF', 'ADMIN', 'SUPER ADMIN', 'TECHNICAL STAFF'].includes(userRole.value)
-      }
+      if (loc === 'SHELF') return ROLES_SEE_SHELF.has(userRole.value)
+      if (loc === 'STACK') return ROLES_SEE_STACK.has(userRole.value)
     }
     return true
   })

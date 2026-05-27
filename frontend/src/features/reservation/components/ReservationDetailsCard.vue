@@ -1,6 +1,6 @@
 <script setup>
 import BaseIcon from '@/components/base/BaseIcon.vue';
-import { mdiCalendar, mdiCheckCircle, mdiAccount, mdiBook } from '@mdi/js';
+import { mdiCheckCircle, mdiAccount, mdiBook } from '@mdi/js';
 
 const props = defineProps({
   selectedMaterial: {
@@ -42,17 +42,6 @@ const emit = defineEmits(['update:reserveDate', 'submit', 'change-material']);
           {{ selectedMaterial.author || '-' }}
         </p>
         <p class="text-xs text-gray-600 dark:text-slate-300 mt-2">Available copies: {{ selectedMaterial.available_copies || 0 }}</p>
-      </div>
-
-      <label class="block text-sm font-medium text-gray-700 dark:text-slate-300">Reservation Date</label>
-      <div class="relative">
-        <BaseIcon :path="mdiCalendar" size="16" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500" />
-        <input
-          :value="reserveDate"
-          type="date"
-          class="w-full pl-10 pr-3 py-2.5 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-200 dark:focus:ring-amber-500/20 focus:border-primary-400 dark:focus:border-amber-500"
-          @input="emit('update:reserveDate', $event.target.value)"
-        />
       </div>
 
       <button

@@ -111,6 +111,7 @@ class MaterialFeedbackStatsMixin:
 class PhysicalMaterialSerializer(MaterialFeedbackStatsMixin, serializers.ModelSerializer):
     created_by_name = serializers.CharField(source="created_by.full_name", read_only=True)
     library_name = serializers.CharField(source="library.name", read_only=True)
+    material_type = serializers.SerializerMethodField(read_only=True)
 
     average_rating = serializers.SerializerMethodField(read_only=True)
     ratings_count = serializers.SerializerMethodField(read_only=True)
@@ -127,10 +128,14 @@ class PhysicalMaterialSerializer(MaterialFeedbackStatsMixin, serializers.ModelSe
             "department", "language", "isbn", "barcode", "total_copies", 
             "available_copies", "price", "condition", "location", "can_borrow", 
             "image", "description", "library", "library_name", "created_by", "created_by_name",
+            "material_type",
             "average_rating", "ratings_count", "comments_count", "recent_feedbacks",
             "my_rating", "my_comment", "my_feedback_id"
         ]
-        read_only_fields = ["created_by", "created_by_name", "library_name"]
+        read_only_fields = ["created_by", "created_by_name", "library_name", "material_type"]
+
+    def get_material_type(self, obj):
+        return "physical"
 
     def validate_image(self, value):
         if value and not is_allowed_image_file(value):
@@ -143,6 +148,7 @@ class DigitalMaterialSerializer(MaterialFeedbackStatsMixin, serializers.ModelSer
     library_name = serializers.CharField(source="library.name", read_only=True)
     file = serializers.FileField(required=True)
     cover_image_url = serializers.SerializerMethodField(read_only=True)
+    material_type = serializers.SerializerMethodField(read_only=True)
 
     average_rating = serializers.SerializerMethodField(read_only=True)
     ratings_count = serializers.SerializerMethodField(read_only=True)
@@ -158,12 +164,15 @@ class DigitalMaterialSerializer(MaterialFeedbackStatsMixin, serializers.ModelSer
             "id", "title", "author", "category", "genre", "published_date",
             "department", "language", "isbn", "format", "file_size", "file",
             "cover_image", "cover_generated_at", "description", "allow_downloadable",
-            "library", "library_name",
+            "library", "library_name", "material_type",
             "created_by", "created_by_name", "cover_image_url",
             "average_rating", "ratings_count", "comments_count", "recent_feedbacks",
             "my_rating", "my_comment", "my_feedback_id"
         ]
-        read_only_fields = ["created_by", "created_by_name", "library_name", "format", "file_size"]
+        read_only_fields = ["created_by", "created_by_name", "library_name", "format", "file_size", "material_type"]
+
+    def get_material_type(self, obj):
+        return "digital"
 
     def get_cover_image_url(self, obj):
         return _build_media_url(self.context.get("request"), getattr(obj, "cover_image", None))

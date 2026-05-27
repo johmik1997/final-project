@@ -72,16 +72,28 @@
               </div>
             </div>
 
-            <!-- Action Buttons for Borrow/Read - Hide for members -->
-            <div v-if="!currentUserIsMember && ((!isPhysicalMaterial && canShowDigitalActions) || (isPhysicalMaterial && !currentUserIsMember))" class="primary-actions">
+            <!-- Action Buttons for Borrow/Read / Reserve -->
+            <div class="primary-actions">
               <template v-if="isPhysicalMaterial">
-                <button class="btn-primary" :disabled="!canBorrow" @click="handlePrimaryAction">
-                  {{ borrowButtonText }}
-                </button>
-                <button class="btn-secondary" :disabled="!canReserve" @click="goToReserve">
-                  <BaseIcon :path="mdiLockClock" size="16" />
-                  Join reservation queue
-                </button>
+                <template v-if="currentUserIsMember">
+                  <button
+                    v-if="canReserve"
+                    class="btn-secondary"
+                    @click="goToReserve"
+                  >
+                    <BaseIcon :path="mdiLockClock" size="16" />
+                    Reserve material
+                  </button>
+                </template>
+                <template v-else>
+                  <button v-if="!isTechnicalStaff" class="btn-primary" :disabled="!canBorrow" @click="handlePrimaryAction">
+                    {{ borrowButtonText }}
+                  </button>
+                  <button class="btn-secondary" :disabled="!canReserve" @click="goToReserve">
+                    <BaseIcon :path="mdiLockClock" size="16" />
+                    Join reservation queue
+                  </button>
+                </template>
               </template>
               <template v-else>
                 <button class="btn-primary" :disabled="!isPdfMaterial" @click="goToReadMaterial">
@@ -372,9 +384,15 @@ const reviewForm = reactive({
   comment: '',
 });
 
-const activeType = computed(() =>
-  String(route.query?.type || 'physical').toLowerCase() === 'digital' ? 'digital' : 'physical'
-);
+const activeType = computed(() => {
+  const payloadType = String(material.value?.material_type || '').toLowerCase();
+  if (payloadType === 'digital' || payloadType === 'physical') return payloadType;
+
+  const queryType = String(route.query?.type || '').toLowerCase();
+  if (queryType === 'digital' || queryType === 'physical') return queryType;
+
+  return 'physical';
+});
 
 const isPhysicalMaterial = computed(() => activeType.value === 'physical');
 
@@ -458,8 +476,9 @@ const currentUserRole = computed(() => {
   return normalizeRoleValue(user?.roleName || user?.role || user?.userRole);
 });
 const currentUserIsMember = computed(() => currentUserRole.value === 'MEMBER');
-const canBorrow = computed(() => isPhysicalMaterial.value && Number(material.value?.available_copies || 0) > 0 && !currentUserIsMember.value);
-const canReserve = computed(() => isPhysicalMaterial.value && Number(material.value?.available_copies || 0) <= 0 && !currentUserIsMember.value);
+const isTechnicalStaff = computed(() => currentUserRole.value === 'TECHNICAL STAFF');
+const canBorrow = computed(() => isPhysicalMaterial.value && Number(material.value?.available_copies || 0) > 0 && !currentUserIsMember.value && !isTechnicalStaff.value);
+const canReserve = computed(() => isPhysicalMaterial.value && Number(material.value?.available_copies || 0) <= 0);
 const canShowDigitalActions = computed(() => !isPhysicalMaterial.value);
 const digitalFileUrl = computed(() =>
   toAbsoluteUrl(material.value?.file || material.value?.file_url || material.value?.download_url || '')
@@ -589,12 +608,31 @@ onBeforeUnmount(() => {
   }
 });
 
-function loadMaterial() {
+async function loadMaterial() {
   if (!materialId.value) return;
 
+  const queryType = String(route.query?.type || '').toLowerCase();
+  const primaryType = queryType === 'digital' || queryType === 'physical' ? queryType : 'physical';
+  const fallbackType = primaryType === 'physical' ? 'digital' : 'physical';
+
+  const request = () => getMaterialById(materialId.value, primaryType);
+
   detailReq.send(
-    () => getMaterialById(materialId.value, activeType.value),
-    (res) => {
+    request,
+    async (res) => {
+      if (!res?.success && primaryType !== fallbackType) {
+        const fallbackRes = await getMaterialById(materialId.value, fallbackType);
+        if (fallbackRes?.success) {
+          detailReq.response.value = fallbackRes?.data ?? fallbackRes;
+          detailReq.error.value = '';
+          const loaded = extractRow(fallbackRes?.data || fallbackRes);
+          resolvedMaterialId.value = String(
+            loaded?.id || loaded?.uuid || materialId.value || ''
+          ).trim();
+          return;
+        }
+      }
+
       if (!res?.success) {
         toasted(false, 'Failed to load material details');
         return;

@@ -19,6 +19,7 @@ from .overdue_letters import (
 )
 from .services import (
     sync_overdue_borrow_statuses,
+    process_overdue_borrows_and_notify,
     notify_circulation_borrow_success,
     notify_circulation_return_success,
 )
@@ -83,6 +84,7 @@ class BorrowViewSet(ModelViewSet):
 
     def get_queryset(self):
         sync_overdue_borrow_statuses()
+        process_overdue_borrows_and_notify()
         queryset = Borrow.objects.select_related("member__library", "material__library", "created_by").all().order_by("-borrow_date")
         user = self.request.user
         if normalize_role(getattr(user, "role", None)) == "MEMBER":
@@ -114,6 +116,9 @@ class BorrowViewSet(ModelViewSet):
             if material:
                 material.available_copies = min(material.total_copies, (material.available_copies or 0) + 1)
                 material.save(update_fields=["available_copies"])
+                from transactions.services import notify_reserved_members_material_available
+                from django.db import transaction as _tx
+                _tx.on_commit(lambda m=material: notify_reserved_members_material_available(m))
         borrow.delete()
         invalidate_material_caches()
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -300,5 +305,6 @@ class CirculationViewSet(ModelViewSet):
             
         from django.db import transaction as db_transaction
         db_transaction.on_commit(lambda: notify_circulation_return_success(circulation))
+        db_transaction.on_commit(lambda m=material: __import__('transactions.services', fromlist=['notify_reserved_members_material_available']).notify_reserved_members_material_available(m))
         db_transaction.on_commit(invalidate_material_caches)
         return Response({"success": True, "message": "Material returned successfully."})

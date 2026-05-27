@@ -26,6 +26,7 @@ const showBarcodeScanner = ref(false);
 const lookupPending = ref(false);
 const lookupPreview = ref(null);
 const scannedBarcode = ref('');
+const allowDownloadable = ref(true);
 const currentType = computed(() => materialStore.createType || 'physical');
 const isDigital = computed(() => currentType.value === 'digital');
 const modalTitle = computed(() => isDigital.value ? 'Add New Digital Material' : 'Add New Physical Material');
@@ -332,12 +333,7 @@ function handleCreate({ values }) {
     payload.append('language', values.language || '');
     payload.append('isbn', values.isbn || '');
     payload.append('description', values.description || '');
-    const allowDownload =
-      values.allow_downloadable === true ||
-      values.allow_downloadable === 'YES' ||
-      values.allow_downloadable === 'true' ||
-      values.allow_downloadable === 'on';
-    payload.append('allow_downloadable', allowDownload ? 'true' : 'false');
+    payload.append('allow_downloadable', allowDownloadable.value ? 'true' : 'false');
     if (values.library) {
       payload.append('library', values.library);
     }
@@ -355,7 +351,7 @@ function handleCreate({ values }) {
           }
           emitEntityMutation('materials', { action: 'created', type: currentType.value });
           toasted(true, 'Material Added Successfully');
-          closeModal();
+          handleCloseModal();
         } else {
           toasted(false, '', res.error);
         }
@@ -389,7 +385,7 @@ function handleCreate({ values }) {
           }
           emitEntityMutation('materials', { action: 'created', type: currentType.value });
           toasted(true, 'Material Added Successfully');
-          closeModal();
+          handleCloseModal();
         } else {
           toasted(false, '', res.error);
         }
@@ -402,10 +398,25 @@ function validateAndNext() {
   nextStep();
 }
 
+function resetForm() {
+  currentStep.value = 1;
+  Object.keys(prefillData).forEach(key => {
+    prefillData[key] = '';
+  });
+  scannedBarcode.value = '';
+  allowDownloadable.value = true;
+  lookupPreview.value = null;
+  showBarcodeScanner.value = false;
+}
+
+function handleCloseModal() {
+  resetForm();
+  closeModal();
+}
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="closeModal">
+  <div class="modal-overlay" @click.self="handleCloseModal">
     <div class="modal-container">
       <!-- Modal Header -->
       <div class="modal-header">
@@ -413,7 +424,7 @@ function validateAndNext() {
           <h2 class="modal-title">{{ modalTitle }}</h2>
           <p class="modal-subtitle">Fill in the details to add a new material to the library</p>
         </div>
-        <button class="modal-close" @click="closeModal">
+        <button class="modal-close" @click="handleCloseModal">
           <BaseIcon :path="mdiClose" size="20" />
         </button>
       </div>
@@ -627,8 +638,8 @@ function validateAndNext() {
                 <input
                   type="checkbox"
                   name="allow_downloadable"
-                  value="YES"
-                  checked
+                  v-model="allowDownloadable"
+                  :value="true"
                   class="downloadable-checkbox"
                 />
                 <span>Allow members to download this file</span>
