@@ -16,13 +16,21 @@ ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale)
 const props = defineProps({
   labels: { type: Array, default: () => [] },
   values: { type: Array, default: () => [] },
+  datasets: { type: Array, default: () => [] },
   label: { type: String, default: 'Count' },
   color: { type: String, default: '#f59e0b' },
 });
 
-const chartData = computed(() => ({
-  labels: props.labels,
-  datasets: [
+const normalizedDatasets = computed(() => {
+  if (props.datasets?.length) {
+    return props.datasets.map((dataset) => ({
+      borderRadius: 8,
+      maxBarThickness: 48,
+      ...dataset,
+    }));
+  }
+
+  return [
     {
       label: props.label,
       data: props.values,
@@ -30,14 +38,19 @@ const chartData = computed(() => ({
       borderRadius: 8,
       maxBarThickness: 48,
     },
-  ],
+  ];
+});
+
+const chartData = computed(() => ({
+  labels: props.labels,
+  datasets: normalizedDatasets.value,
 }));
 
-const chartOptions = {
+const chartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
-    legend: { display: false },
+    legend: { display: normalizedDatasets.value.length > 1 },
   },
   scales: {
     y: {
@@ -48,7 +61,7 @@ const chartOptions = {
       grid: { display: false },
     },
   },
-};
+}));
 </script>
 
 <template>
