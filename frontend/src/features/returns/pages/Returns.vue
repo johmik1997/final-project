@@ -157,10 +157,11 @@ function confirmReturn() {
   const row = pendingReturnRow.value;
   if (!row) return;
 
+  const conditionToSubmit = selectedCondition.value;
   closeConditionModal();
 
   createReq.send(
-    () => createReturn({ borrow: row?.id, material_condition: selectedCondition.value }),
+    () => createReturn({ borrow: row?.id, material_condition: conditionToSubmit }),
     (res) => {
       if (!res?.success) {
         toasted(false, 'Failed to process return', res?.error || 'Unknown error');

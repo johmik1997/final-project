@@ -48,6 +48,7 @@ def has_global_material_access(user):
 def get_active_library_policy(library=None):
     queryset = LibraryPolicy.objects.select_related("library")
 
+    # 1. Try library-specific active policy first
     if library is not None:
         policy = (
             queryset.filter(library=library, is_active=True).first()
@@ -56,7 +57,10 @@ def get_active_library_policy(library=None):
         if policy:
             return policy
 
+    # 2. Always fall back to the global policy (library=null) — applies to all libraries
     return (
         queryset.filter(library__isnull=True, is_active=True).first()
         or queryset.filter(library__isnull=True).first()
+        or queryset.filter(is_active=True).first()
+        or queryset.first()
     )
